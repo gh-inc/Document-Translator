@@ -56,6 +56,27 @@ survive contact with distributed-systems reality. Every invariant in the
 final design either came from the human reviewer or survived an explicit
 "what can this system actually promise?" cross-examination.
 
+### 2026-10-01 — Workflow decision: architect/agent split, contracts deferred
+
+**Decision.** Roles were separated explicitly. Architecture, contracts, and
+decision records are maintained in Markdown with a human-in-the-loop gate
+(ARCHITECTURE.md, DECISIONS.md, AGENTS.md, this file). Code is written by an
+agent-driven implementation flow that starts from those artifacts.
+
+**What happened.** The initial setup pass overshot: it produced a full
+module skeleton with contract stubs (`core/ports.py`, `core/models.py`,
+`core/errors.py`) before the implementation flow existed. The commit was
+reverted. Contracts drafted in a vacuum — ahead of the flow that must own
+them — either fossilize into dead scaffolding or get rewritten under the
+first real constraint; both outcomes are worse than drafting them in the
+moment, with the approval gate from AGENTS.md (rule 4) actually exercised.
+
+**Correction logged.** "Scaffold early so agents stay in bounds" sounded
+right and was still wrong *at this stage*: the correct bound at this stage
+is the set of Markdown artifacts (ARCHITECTURE.md as SoT, AGENTS.md as
+guardrails, pinned tooling), not premature Python contracts. Setup was
+deliberately scoped down to: docs, guardrails, tooling, secret hygiene.
+
 ---
 
 _Implementation entries to follow._
