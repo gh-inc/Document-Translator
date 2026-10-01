@@ -1,0 +1,64 @@
+[project]
+name = "document-translator"
+version = "0.1.0"
+description = "Async document translation service: PDF/DOCX in, translated PDF/DOCX out"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "aiosqlite>=0.20",
+    "openai>=1.55",
+    "openai-agents>=0.2",
+    "fastmcp>=2.0",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "tiktoken>=0.8",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "httpx>=0.28",
+    "python-multipart>=0.0.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "."
+packages = ["app"]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+markers = [
+    "live: tests that call the real OpenAI API (opt-in, costs money)",
+]
+
+[tool.coverage.run]
+source = ["app"]
