@@ -1,0 +1,169 @@
+# DECISIONS.md
+
+**Status:** Living document. Decision records are written as decisions are
+made; the measured numbers (cost per document, p95 latency, quality score)
+are filled in at the end of implementation.
+
+This file records what we chose **not** to build and why, the trade-offs we
+took knowingly, and what we would build with three more weeks. The
+assessment's own rule applies: stated gaps read as judgment; silent gaps
+read as oversights.
+
+---
+
+## 1. Decision record: single-runtime architecture (Python 3.12) vs. polyglot (Node.js + Python)
+
+**Context.** The system combines high-concurrency I/O (async web server, SSE
+streaming, parallel LLM API calls) with low-level document processing (PDF
+coordinate extraction, document-tree manipulation, the `openai-agents` SDK).
+Its deployment model is three processes — web, worker, MCP — sharing one
+SQLite database and one filesystem volume, and it must survive forced
+container restarts (`kill -9`) without state corruption.
+
+**Evaluated alternatives.**
+
+1. **Polyglot — Node.js for API/MCP + Python worker.**
+   - *Pros:* Node's event loop is a natural fit for the API/SSE tier.
+   - *Cons:* double containerization and dependency overhead; two data-model
+     definitions to keep synchronized (TypeScript interfaces vs. Pydantic
+     models); cross-runtime SQLite access — differing driver defaults for
+     transactions and busy timeouts — invites lock contention
+     (`database is locked`) precisely under the concurrent web/worker load
+     this system is designed for; IPC or shared-volume coordination between
+     runtimes adds a failure surface with no compensating capability gain.
+2. **Pure TypeScript / Node.js.**
+   - *Pros:* one language across the entire stack.
+   - *Cons:* the Node PDF ecosystem has no mature equivalent of PyMuPDF's
+     coordinate-precise extraction and in-place rendering; TypeScript
+     support for `openai-agents` is younger and less battle-tested than the
+     Python SDK — the two most failure-prone parts of this system would sit
+     on its two weakest libraries.
+3. **Pure Python 3.12 (FastAPI + worker + FastMCP) — CHOSEN.**
+   - *Pros:* one runtime, one dependency set, one Docker image, one test
+     runner; mature document libraries (PyMuPDF, python-docx) and the
+     reference implementation of the agents SDK; uniform SQLite access
+     semantics (WAL mode) from all three processes, with no cross-runtime
+     driver or locking mismatches; `asyncio` + FastAPI + uvicorn covers the
+     I/O-bound concurrency profile (SSE, parallel LLM calls) without
+     introducing a second runtime.
+
+**Rationale.** In a system that must survive forced container restarts
+without state corruption, minimizing inter-process and inter-runtime
+coordination is the primary reliability lever: every runtime boundary is a
+place where state can diverge and where a lock or a message can be lost. A
+single runtime provides one point of control over database state and
+eliminates an entire bug category — cross-runtime model drift, where a
+TypeScript interface and a Pydantic model silently disagree about a field.
+The performance cost is negligible for this workload: the system is
+I/O-bound (end-to-end latency is dominated by the LLM provider), and
+Python's async stack handles I/O-bound concurrency without strain.
+Development velocity is a second-order but real benefit: one language, one
+type system, and one test stack across web, worker, and MCP.
+
+---
+
+## 2. Decision record: document format handling
+
+**Context.** The pipeline must accept at least two input formats (PDF, DOCX)
+and return "the same file, translated". The architectural question: how much
+of each format's layout semantics does the translation core need to
+understand?
+
+### Rejected option 1 — Universal Document IR with full layout normalization
+
+A single rich intermediate representation (typed blocks, style trees, table
+grids, column geometry) that every extractor normalizes into and every
+renderer reconstructs from.
+
+**Why rejected:**
+
+- **Over-engineering for a 3-day MVP.** The IR, not the translation, becomes
+  the project. Every fidelity bug moves into a model-mapping layer — the
+  layer we control least and understand worst.
+- **Style mapping breaks exactly where it hurts.** Translation changes text
+  length (EN→DE ≈ +30%), so normalized style/geometry mappings need
+  per-format reflow logic anyway. The normalization buys abstraction, not
+  simplicity.
+- **Fidelity is bounded by the weakest normalized concept.** Anything the IR
+  cannot express is lost even for formats that natively support it.
+
+### Rejected option 2 — Markdown bridge (PDF → MD → translate → MD → PDF)
+
+Convert every input to Markdown, translate the Markdown, convert back.
+
+**Why rejected:** fatal loss of the original document's layout and
+formatting. "The same file, translated" is the product requirement; a
+reflowed Markdown rendering of a contract or a report is not the same file.
+Tables, multi-column layouts, headers/footers, embedded images, and fonts do
+not survive the round trip.
+
+### Accepted — Opaque Metadata pattern + shared disk
+
+- The core pipeline (chunker, worker, LLM provider, cache, queue) handles
+  **only `seq` + `source_text`**.
+- Each format's extractor records whatever its renderer will need — PDF:
+  page/bbox/font size; DOCX: paragraph/run indices — into an opaque JSON
+  `format_metadata` field on the Block. The core persists it and hands it
+  back without inspection; the invariant is pinned by a test.
+- The original upload is kept on the shared volume
+  (`/data/uploads/{document_id}`), and the renderer **re-opens it as the
+  canvas**, placing translations via `format_metadata`. Fidelity of
+  everything the extractor never touched (images, headers, styles) is
+  preserved by construction, not by reconstruction.
+
+**Consequences.** Format knowledge is fully quarantined in adapter modules;
+the core stays format-agnostic and testable with synthetic blocks; a third
+format is one module + one registry entry. The costs, taken knowingly:
+`format_metadata` is untyped across the core boundary (mitigated by
+per-adapter schemas and per-format contract tests), and renderers depend on
+the original file being available — acceptable on a single shared volume,
+revisited under horizontal scaling (§4).
+
+---
+
+## 3. Other conscious cuts
+
+Seeded from ARCHITECTURE.md §15; each gets a closing paragraph with measured
+impact at the end of implementation:
+
+- OCR for scanned PDFs (rejected with a clear `scanned_pdf` error instead)
+- Pixel-perfect PDF layout (text-oriented fidelity only, ARCHITECTURE.md §6.6)
+- Horizontal worker scaling (single worker + bounded async concurrency,
+  measured in §3 before claimed)
+- Auth / multi-tenancy
+- Glossary editing UI (triage glossary is automatic)
+- Sequential polish pass with translated context
+- Side-by-side preview / in-place editing
+
+---
+
+## 4. Measured numbers
+
+_Pending implementation. To be reported on a fixed sample document:_
+
+- **Cost per document** — and what dominates it, including the retry share
+  (`chunk_attempts` makes duplicate spend from ambiguous provider failures
+  visible rather than hidden)
+- **p95 chunk latency** and **p95 job latency** — before/after enabling chunk
+  parallelism; numbers, not adjectives
+- **Quality proxy** — back-translation chrF (EN→DE→EN vs. original), used as
+  a coarse proxy for information preservation, not as a direct quality metric
+
+---
+
+## 5. Future work — what three more weeks would buy
+
+1. **Object storage (S3/MinIO) instead of the shared volume.** The shared
+   disk is the one thing pinning web, worker, and renderer to the same
+   filesystem. Moving uploads and outputs to object storage (presigned
+   up/downloads; the renderer fetches its canvas object) is the
+   prerequisite for horizontal worker scaling across physical nodes — the
+   stated ceiling of the current single-worker, single-volume design.
+2. **Multi-worker queue semantics** (a real broker with visibility timeouts),
+   unblocked by (1).
+3. **OCR fallback** for scanned PDFs (vision model or Tesseract) behind the
+   same Block abstraction — `scanned_pdf` stops being a rejection.
+4. **Glossary override UI** on top of the persisted TranslationPlan.
+5. **Sequential polish pass** using translated context for long-range style
+   coherence (the rejected §6 mechanism, reintroduced as an optional
+   post-pass where serialization is acceptable).
