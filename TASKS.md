@@ -38,5 +38,5 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-2 | 0 | Record AI provider and cost strategy; correct decision references | done | 095b67b, 8094265 |
 | DT-3 | 0 | Add REST schemas and adapter skeletons | done | 8669e64 |
 | DT-4 | 0 | Verify opaque metadata and contract architecture invariants | done | 412af38 |
-| DT-5 | 0 | Record approved contract corrections and persistence requirements | done | — (not committed) |
+| DT-5 | 0 | Record approved contract corrections and persistence requirements | done | 10e7793 |
 | DT-6 | 0 | Implement approved domain models and atomic repository ports | done | 6837492 |
