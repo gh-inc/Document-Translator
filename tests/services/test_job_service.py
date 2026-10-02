@@ -351,3 +351,68 @@ async def test_same_payload_race_is_idempotent_and_conflicting_race_is_rejected(
         assert sum(isinstance(result, list) for result in different) == 1
     finally:
         await second_connection.close()
+
+
+async def test_analysis_changed_before_atomic_enqueue_is_pending_and_rolls_back(
+    job_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A triage retry during chunk grouping must prevent the eventual job insert."""
+    job_repo = job_context["job_repo"]
+    original_create = job_repo.create_job_with_chunks
+
+    async def change_analysis_then_create(job, chunks, links):
+        other = await SqliteConnectionFactory(job_context["database_path"]).create()
+        try:
+            async with transaction(other):
+                await SqliteDocumentRepository(other).update_document_status(
+                    "doc-1", DocumentStatus.ANALYZING
+                )
+        finally:
+            await other.close()
+        await original_create(job, chunks, links)
+
+    monkeypatch.setattr(job_repo, "create_job_with_chunks", change_analysis_then_create)
+    with pytest.raises(ServiceError) as raised:
+        await job_context["service"].create_jobs("doc-1", ["de"], "race")
+    assert raised.value.error_code is ErrorCode.ANALYSIS_PENDING
+    assert raised.value.status_code == 409
+    assert not job_context["connection"].in_transaction
+    async with job_context["connection"].execute("SELECT COUNT(*) FROM jobs") as cursor:
+        assert (await cursor.fetchone())[0] == 0
+    async with job_context["connection"].execute("SELECT COUNT(*) FROM chunks") as cursor:
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_analysis_replaced_during_planning_rejects_stale_glossary(
+    job_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_repo = job_context["job_repo"]
+    original_create = job_repo.create_job_with_chunks
+
+    async def replace_analysis_then_create(job, chunks, links):
+        other = await SqliteConnectionFactory(job_context["database_path"]).create()
+        try:
+            async with transaction(other):
+                async with other.execute(
+                    "DELETE FROM document_analyses WHERE document_id = 'doc-1'"
+                ):
+                    pass
+                await SqliteDocumentRepository(other).save_analysis(
+                    "doc-1",
+                    TranslationPlan(
+                        source_language="en", domain="legal", register="formal", terms=["New term"]
+                    ),
+                )
+        finally:
+            await other.close()
+        await original_create(job, chunks, links)
+
+    monkeypatch.setattr(job_repo, "create_job_with_chunks", replace_analysis_then_create)
+    with pytest.raises(ServiceError) as raised:
+        await job_context["service"].create_jobs("doc-1", ["de"], "stale-glossary")
+    assert raised.value.error_code is ErrorCode.ANALYSIS_PENDING
+    async with job_context["connection"].execute("SELECT COUNT(*) FROM jobs") as cursor:
+        assert (await cursor.fetchone())[0] == 0
+    monkeypatch.setattr(job_repo, "create_job_with_chunks", original_create)
+    jobs = await job_context["service"].create_jobs("doc-1", ["de"], "stale-glossary")
+    assert jobs[0].glossary == {"New term": "New term"}

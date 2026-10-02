@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
-import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
-from app.core.models import DocumentRecord, DocumentStatus, TranslationPlan
+from app.core.models import DocumentRecord, DocumentStatus, TriageStatus
 from app.core.ports import DocumentRepository, FileStorage, FormatRegistry
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -35,6 +35,8 @@ class DocumentService:
         transaction_context: TransactionContext,
         settings: Settings,
         cleanup_upload: UploadCleanup | None = None,
+        upload_lock: asyncio.Lock | None = None,
+        analysis_in_use: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._document_repo = document_repo
         self._file_storage = file_storage
@@ -42,9 +44,15 @@ class DocumentService:
         self._transaction_context = transaction_context
         self._settings = settings
         self._cleanup_upload = cleanup_upload
+        self._upload_lock = upload_lock or asyncio.Lock()
+        self._analysis_in_use = analysis_in_use
 
     async def upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
         """Validate and persist one upload; return its record and extracted block count."""
+        async with self._upload_lock:
+            return await self._upload(filename, content)
+
+    async def _upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
         safe_filename = sanitize_filename(filename)
         if len(content) > MAX_UPLOAD_BYTES:
             raise ServiceError(ErrorCode.FILE_TOO_LARGE, status_code=413)
@@ -53,7 +61,12 @@ class DocumentService:
         if file_format not in _SUPPORTED_FORMATS:
             raise ServiceError(ErrorCode.UNSUPPORTED_FORMAT, status_code=415)
 
-        document_id = str(uuid.uuid4())
+        document_id = await asyncio.to_thread(lambda: hashlib.sha256(content).hexdigest())
+        existing = await self._document_repo.get_document(document_id)
+        if existing is not None:
+            if existing.format != file_format:
+                raise DocumentError(ErrorCode.CORRUPT_FILE)
+            return existing, len(await self._document_repo.get_blocks(document_id))
         save_task: asyncio.Task[Path] | None = None
         try:
             save_task = asyncio.create_task(
@@ -94,25 +107,36 @@ class DocumentService:
                 await self._document_repo.create_blocks(document_id, document_ir.blocks)
                 await self._document_repo.update_document_status(
                     document_id,
-                    DocumentStatus.EXTRACTED,
+                    DocumentStatus.ANALYZING,
                 )
-                await self._document_repo.save_analysis(
-                    document_id,
-                    TranslationPlan(
-                        source_language="en",
-                        domain="general",
-                        register="neutral",
-                        terms=[],
-                        warnings=[],
-                    ),
-                )
-            document = document.model_copy(update={"status": DocumentStatus.EXTRACTED})
+            document = document.model_copy(update={"status": DocumentStatus.ANALYZING})
             return document, len(document_ir.blocks)
         except BaseException:
             if save_task is not None:
                 await _finish_task(save_task)
             await self._cleanup(document_id)
             raise
+
+    async def retry_triage(self, document_id: str) -> tuple[DocumentRecord, int]:
+        """Explicitly recover analysis without resetting a successful plan."""
+        async with self._transaction_context():
+            document = await self._document_repo.get_document(document_id)
+            if document is None:
+                raise ServiceError(ErrorCode.NOT_FOUND, status_code=404)
+            analysis = await self._document_repo.get_analysis(document_id)
+            if analysis is None or analysis.triage_status is TriageStatus.DEGRADED:
+                if self._analysis_in_use is not None and await self._analysis_in_use(document_id):
+                    # Existing and resumed jobs must keep their persisted plan
+                    # consistent with the semantic translation cache.
+                    raise ServiceError(ErrorCode.CONFLICT, status_code=409)
+                if document.status is DocumentStatus.FAILED:
+                    raise ServiceError(ErrorCode.CONFLICT, status_code=409)
+                await self._document_repo.update_document_status(
+                    document_id, DocumentStatus.ANALYZING
+                )
+                document = document.model_copy(update={"status": DocumentStatus.ANALYZING})
+            blocks = await self._document_repo.get_blocks(document_id)
+        return document, len(blocks)
 
     async def _cleanup(self, document_id: str) -> None:
         cleanup_callback = self._cleanup_upload

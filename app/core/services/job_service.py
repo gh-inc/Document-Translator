@@ -12,7 +12,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.config import Settings
-from app.core.errors import ErrorCode, ServiceError
+from app.core.errors import AnalysisPendingError, ErrorCode, ServiceError
 from app.core.models import (
     Block,
     ChunkBlockRecord,
@@ -22,7 +22,6 @@ from app.core.models import (
     JobRecord,
     JobStatus,
     TranslationPlan,
-    TriageStatus,
 )
 from app.core.ports import (
     CostCalculator,
@@ -106,17 +105,20 @@ class JobService:
             self._validate_existing_family(
                 existing_family, document_id, languages, batch_id, require_complete=False
             )
-            if {job.target_language for job in existing_family} == set(languages):
-                return self._order_jobs(existing_family, languages)
 
         async with self._persistence.read():
             document = await self._document_repo.get_document(document_id)
             if document is None:
                 raise self._error(ErrorCode.NOT_FOUND, 404)
             if document.status is not DocumentStatus.EXTRACTED:
-                raise self._error(ErrorCode.CONFLICT, 409)
+                raise self._error(ErrorCode.ANALYSIS_PENDING, 409)
             blocks = await self._document_repo.get_blocks(document_id)
             analysis = await self._document_repo.get_analysis(document_id)
+            if analysis is None:
+                raise self._error(ErrorCode.ANALYSIS_PENDING, 409)
+
+        if existing_family and {job.target_language for job in existing_family} == set(languages):
+            return self._order_jobs(existing_family, languages)
 
         if not blocks:
             chunks_of_blocks: list[list[Block]] = []
@@ -124,12 +126,12 @@ class JobService:
             chunks_of_blocks = await asyncio.to_thread(self._group_blocks, blocks, self._model)
 
         plan = TranslationPlan(
-            source_language="en" if analysis is None else analysis.source_language,
-            domain="general" if analysis is None else analysis.domain,
-            register="neutral" if analysis is None else analysis.register,
-            terms=[] if analysis is None else analysis.terms,
-            warnings=[] if analysis is None else analysis.warnings,
-            triage_status=TriageStatus.OK if analysis is None else analysis.triage_status,
+            source_language=analysis.source_language,
+            domain=analysis.domain,
+            register=analysis.register,
+            terms=analysis.terms,
+            warnings=analysis.warnings,
+            triage_status=analysis.triage_status,
         )
         # Stage 5 has no target-language term renderer yet. Identity entries
         # preserve the source terms in the provider prompt without inventing
@@ -200,6 +202,8 @@ class JobService:
             )
             try:
                 await self._job_repo.create_job_with_chunks(job, chunk_records, chunk_links)
+            except AnalysisPendingError:
+                raise self._error(ErrorCode.ANALYSIS_PENDING, 409) from None
             except RuntimeError as exc:
                 raise self._error(ErrorCode.CONFLICT, 409) from exc
             persisted = await self._persistence.find_by_idempotency_key(

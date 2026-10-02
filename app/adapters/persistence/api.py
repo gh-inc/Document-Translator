@@ -22,6 +22,7 @@ from app.adapters.persistence.database import (
     transaction,
 )
 from app.adapters.persistence.repositories import SqliteJobExecutionRepository
+from app.core.errors import AnalysisPendingError
 from app.core.models import JobRecord, JobStatus
 
 
@@ -37,6 +38,25 @@ class ApiJobExecutionRepository(SqliteJobExecutionRepository):
     """Serialize request-key family validation with each aggregate insert."""
 
     async def _validate_new_job(self, job: JobRecord) -> None:
+        async with self._connection.execute(
+            "SELECT documents.status, document_analyses.terms FROM documents "
+            "LEFT JOIN document_analyses ON document_analyses.document_id = documents.id "
+            "WHERE documents.id = ?",
+            (job.document_id,),
+        ) as cursor:
+            document = await cursor.fetchone()
+        if document is not None and (
+            document["status"] != "extracted" or document["terms"] is None
+        ):
+            raise AnalysisPendingError("document analysis is pending")
+        if document is not None:
+            terms = json.loads(document["terms"])
+            # Chunk grouping yields before this transaction. A completed triage
+            # retry may have replaced the terms used to build the job glossary.
+            # Other plan fields are read by the worker after this insert; the
+            # first job freezes them. Reject stale glossary snapshots here.
+            if {term: term for term in terms} != job.glossary:
+                raise AnalysisPendingError("document analysis changed during planning")
         request_digest = job.batch_id.partition(".")[0]
         async with self._connection.execute(
             "SELECT document_id, batch_id FROM jobs WHERE batch_id LIKE ? LIMIT 1",

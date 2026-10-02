@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class DocumentStatus(StrEnum):
     UPLOADED = "uploaded"
+    ANALYZING = "analyzing"
     EXTRACTED = "extracted"
     FAILED = "failed"
 
@@ -71,6 +72,15 @@ class TranslationPlan(BaseModel):
     terms: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     triage_status: TriageStatus = TriageStatus.OK
+
+
+class TriageAgentOutput(BaseModel):
+    """Structured triage result with a brief evidence-based explanation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reasoning: str
+    plan: TranslationPlan
 
 
 class ChunkRequest(BaseModel):

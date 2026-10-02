@@ -93,7 +93,7 @@ async def _upload(client: httpx.AsyncClient, sample: str) -> str:
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["block_count"] > 0
-    assert payload["status"] == "extracted"
+    assert payload["status"] == "analyzing"
     return payload["id"]
 
 

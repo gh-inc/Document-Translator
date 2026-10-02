@@ -32,11 +32,39 @@ connection; streaming requests retain their connection until the stream ends.
    `completed_with_errors`. The latter may contain original text for blocks
    whose translation failed. Other states return 409.
 
-Uploads currently persist a provisional analysis: English source language,
-general domain, neutral register, no terminology or warnings, and triage status
-`ok`. This is the Stage 5 stub, not language detection. Real triage follows in a
-later stage. Analysis terms, when supplied, are identity glossary entries until
-translated terminology is available.
+Uploads return `status=analyzing` after extraction, before background triage
+finishes. The agent navigates text with `read_blocks` and `search_blocks` and
+persists a language/domain/register/terminology plan using its own SQLite
+connection. `LLM_PROVIDER=fake` selects deterministic offline triage and reuses
+`FAKE_FAIL_RATE`, `FAKE_FAIL_MODE` and `FAKE_LATENCY_MS`. Provider analysis has
+three attempts, each limited to 60 seconds, with bounded navigation and SDK
+retries disabled. Exhausted attempts publish a heuristic plan with
+`triage_status=degraded`, an uncertainty warning, and `status=extracted`.
+
+`POST /api/jobs` returns `409 analysis_pending` with `retryable=true` until the
+document is extracted and an analysis exists. Retry that request shortly;
+there is no document polling endpoint in the approved REST surface. Successful
+analysis terms become identity glossary entries until translated terminology
+is available. A repeated upload with identical bytes returns the original
+document ID and analysis, even with a different filename. IDs for new uploads
+are SHA-256 content digests; older UUID documents remain usable but are not
+retrospectively deduplicated.
+
+If the web process dies during analysis, use
+`POST /api/documents/{id}/retry-triage` (no body). This explicit request returns
+the existing upload response with `status=analyzing` and schedules fresh work.
+It also replaces a degraded analysis atomically when analysis succeeds, provided
+no translation jobs exist yet. Once any job exists, the plan is immutable;
+retrying degraded analysis returns `409 conflict` to preserve resumed-job and
+translation-cache consistency. A successful analysis is reused; duplicate scheduled tasks skip completed work.
+Missing documents return 404; failed extraction cannot be retried through
+triage. Background tasks are in-process and are not automatically restarted.
+The service supports one web process: upload and per-document triage locks are
+process-local, not distributed leases. Upload extraction is serialized to
+protect shared content-addressed artifacts; provider analysis does not hold
+that lock or a database transaction. Storage/DB failures can leave `analyzing`
+for explicit recovery. Empty extracted content is marked `failed/corrupt_file`.
+SDK tracing is disabled; raw exceptions and document text are never logged.
 
 ## Retry and costs
 

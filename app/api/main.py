@@ -1,11 +1,14 @@
 """FastAPI application factory and startup initialization."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from weakref import WeakValueDictionary
 
 from fastapi import FastAPI
 
 from app.adapters.persistence.database import SqliteConnectionFactory
+from app.api.background import create_triage_agent
 from app.api.errors import register_exception_handlers
 from app.api.routers import documents, health, jobs
 from app.config import Settings
@@ -23,6 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(title="Document Translator", lifespan=lifespan)
     application.state.settings = settings if settings is not None else Settings()
+    application.state.upload_lock = asyncio.Lock()
+    application.state.triage_locks = WeakValueDictionary()
+    application.state.triage_agent_factory = create_triage_agent
     register_exception_handlers(application)
     application.include_router(documents.router)
     application.include_router(jobs.router)

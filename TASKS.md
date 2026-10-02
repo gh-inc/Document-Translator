@@ -69,6 +69,45 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-33 | 5 | Implement document upload service and router with triage stub | done | 89df2ac |
 | DT-34 | 5 | Implement jobs, batches, downloads and SSE routers | done | 89df2ac |
 | DT-35 | 5 | Implement readiness and metrics; integration review and verification | done | 89df2ac |
+| DT-36 | 6 | Add analyzing status and structured triage output | done | pending delivery |
+| DT-37 | 6 | Implement navigation tools, fake and OpenAI triage adapters | done | pending delivery |
+| DT-38 | 6 | Implement background triage, degraded fallback and retry coordination | done | pending delivery |
+| DT-39 | 6 | Wire upload scheduling and enforce job analysis readiness | done | pending delivery |
+| DT-40 | 6 | Verify triage integration, review, document and deliver | done | pending delivery |
+
+### Stage 6 execution decomposition (2026-10-02)
+
+- DT-36: orchestrator owns approved core model additions and tests.
+- DT-37: delegated adapter implementation and focused offline/live tests.
+- DT-38 / DT-39: orchestrator owns core services, internal persistence helpers,
+  background composition, routers and integration tests.
+- DT-40: independent delegated review, full acceptance checks, docs and commits.
+
+Rulings: the user's execution request approves the plan's public additions.
+Keep the existing TriageAgent port returning TranslationPlan; service persistence
+converts it to DocumentAnalysisRecord. reasoning contains a brief explanation
+of evidence, never a request for private chain of thought. Navigation sees only
+seq/source_text. No schema migration; explicit retry recovers a stuck analyzing
+record. Use next sequential task IDs. Preserve unrelated user changes in
+DECISIONS.md, PROMPTS.md, TEST_TASK.md and docs/roadmap.md. Work in the existing
+stage-5-rest-api task branch to preserve the user's workspace. Implementers
+own disjoint files, do not commit or spawn agents. One implementation commit
+and a separate hash-backfill commit; no amend/rebase/push.
+
+Stage 6 implementation and independent review are complete. Acceptance checks:
+`make test` — 367 passed, 2 live tests deselected; `make lint` — clean (113 files
+formatted); `make typecheck` — clean (49 source files). The 65 new offline tests
+cover strict models, bounded navigation, SDK output/errors/client lifetime,
+fake determinism/faults, response-before-analysis ordering, independent WAL
+connections, retry/fallback/cancellation, crash recovery, immutable analyses,
+atomic publication/enqueue rollback, stale glossary races and duplicate uploads.
+Threaded tests ran outside the sandbox. Two existing Pydantic register warnings
+remain; no live API calls were made. Independent review also verified a real
+Agents SDK loop using an offline mock transport. Review reproduced and resolved
+plan replacement/cache inconsistency: analysis freezes after any job exists,
+and atomic enqueue checks current analysis terms. Scope and execution rulings
+are recorded in the Stage 6 plan; operating notes are in docs/api.md.
+Unrelated user changes are preserved and excluded from delivery.
 
 ### Stage 5 execution decomposition (2026-10-02)
 

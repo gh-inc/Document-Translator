@@ -25,6 +25,7 @@ from app.core.models import (
     JobRecord,
     JobStatus,
     TranslationPlan,
+    TriageAgentOutput,
     TriageStatus,
 )
 
@@ -60,6 +61,7 @@ MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
         },
     ),
     (TranslationPlan, PLAN_DATA),
+    (TriageAgentOutput, {"reasoning": "English text in sampled sections", "plan": PLAN_DATA}),
     (
         ChunkRequest,
         {
@@ -269,3 +271,14 @@ def test_chunk_request_context_defaults_are_independent() -> None:
     first.context_after.append(Block.model_validate(BLOCK_DATA))
     assert second.context_before == []
     assert second.context_after == []
+
+
+def test_analyzing_status_roundtrips_json() -> None:
+    data = dict(dict(MODEL_FIXTURES)[DocumentRecord])
+    data["status"] = DocumentStatus.ANALYZING
+    document = DocumentRecord.model_validate(data)
+    assert '"status":"analyzing"' in document.model_dump_json()
+    assert (
+        DocumentRecord.model_validate_json(document.model_dump_json()).status
+        is DocumentStatus.ANALYZING
+    )

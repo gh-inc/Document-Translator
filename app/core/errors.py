@@ -8,6 +8,7 @@ class ErrorCode(StrEnum):
     INVALID_REQUEST = "invalid_request"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
+    ANALYSIS_PENDING = "analysis_pending"
     UNSUPPORTED_FORMAT = "unsupported_format"
     FILE_TOO_LARGE = "size_limit"
     PAGE_LIMIT = "page_limit"
@@ -31,6 +32,7 @@ _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
     ErrorCode.INTERNAL_ERROR: ("Internal server error", True),
     ErrorCode.INVALID_REQUEST: ("Request validation failed", False),
     ErrorCode.NOT_FOUND: ("Requested resource was not found", False),
+    ErrorCode.ANALYSIS_PENDING: ("Document analysis is pending; retry shortly", True),
     ErrorCode.CONFLICT: ("Request conflicts with the resource state", False),
     ErrorCode.UNSUPPORTED_FORMAT: ("Document format is unsupported", False),
     ErrorCode.FILE_TOO_LARGE: ("Document exceeds the 50 MiB upload limit", False),
@@ -81,6 +83,10 @@ class DocumentError(Exception):
         self.error_code = error_code
         self.message, self.retryable = _CATALOG[error_code]
         super().__init__(self.message)
+
+
+class AnalysisPendingError(RuntimeError):
+    """Internal signal that analysis changed before an atomic job insert."""
 
 
 class ProviderError(Exception):

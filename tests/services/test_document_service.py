@@ -1,4 +1,4 @@
-"""Document uploads persist extracted content and the Stage 5 triage stub."""
+"""Document uploads persist extracted content and the pending background analysis."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from app.adapters.storage.filesystem import FilesystemStorage
 from app.api.routers.documents import _read_bounded_upload
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
-from app.core.models import DocumentStatus, TriageStatus
+from app.core.models import DocumentStatus
 from app.core.services.document_service import DocumentService, sanitize_filename
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
@@ -72,7 +72,7 @@ async def document_context(
 
 
 @pytest.mark.parametrize("extension", ["pdf", "docx"])
-async def test_upload_persists_document_blocks_and_default_analysis(
+async def test_upload_persists_document_blocks_without_analysis(
     document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
     extension: str,
 ) -> None:
@@ -89,20 +89,14 @@ async def test_upload_persists_document_blocks_and_default_analysis(
     analysis = await repository.get_analysis(document.id)
     assert document.filename == f"report.{extension}"
     assert document.format == extension
-    assert document.status is DocumentStatus.EXTRACTED
+    assert document.status is DocumentStatus.ANALYZING
     assert persisted_document is not None
-    assert persisted_document.status is DocumentStatus.EXTRACTED
+    assert persisted_document.status is DocumentStatus.ANALYZING
     if extension == "pdf":
         assert persisted_document.page_count is not None
     assert block_count > 0
     assert len(blocks) == block_count
-    assert analysis is not None
-    assert analysis.source_language == "en"
-    assert analysis.domain == "general"
-    assert analysis.register == "neutral"
-    assert analysis.terms == []
-    assert analysis.warnings == []
-    assert analysis.triage_status is TriageStatus.OK
+    assert analysis is None
 
 
 def test_filename_sanitizer_uses_safe_basename_for_both_path_styles() -> None:
@@ -259,7 +253,7 @@ async def test_extracted_text_limit_uses_utf8_bytes_and_cleans_rejected_upload(
 
     service._cleanup_upload = track_cleanup
     with pytest.raises(DocumentError) as raised:
-        await service.upload("rejected.docx", content)
+        await service.upload("rejected.docx", content + b"\x00")
 
     assert raised.value.error_code is ErrorCode.TEXT_LIMIT
     assert len(called) == 1
@@ -268,7 +262,7 @@ async def test_extracted_text_limit_uses_utf8_bytes_and_cleans_rejected_upload(
         await storage.get_upload_path(called[0])
 
 
-async def test_document_blocks_and_analysis_roll_back_together(
+async def test_document_and_blocks_roll_back_when_status_write_fails(
     document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -276,11 +270,11 @@ async def test_document_blocks_and_analysis_roll_back_together(
     content = await asyncio.to_thread((SAMPLES / "sample_en.docx").read_bytes)
     uploaded_ids: list[str] = []
 
-    async def fail_analysis(document_id: str, plan: object) -> object:
+    async def fail_status(document_id: str, status: object, error_code: str | None = None) -> None:
         uploaded_ids.append(document_id)
         raise RuntimeError("injected persistence failure")
 
-    monkeypatch.setattr(repository, "save_analysis", fail_analysis)
+    monkeypatch.setattr(repository, "update_document_status", fail_status)
     with pytest.raises(RuntimeError, match="injected persistence failure"):
         await service.upload("report.docx", content)
 

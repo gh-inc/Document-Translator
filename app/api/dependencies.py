@@ -19,6 +19,7 @@ from app.adapters.persistence.repositories import (
     SqliteJobExecutionRepository,
     SqliteTranslationCacheRepository,
 )
+from app.adapters.persistence.triage import TriagePersistence
 from app.adapters.storage.filesystem import FilesystemStorage
 from app.adapters.storage.readiness import check_storage_writable
 from app.config import Settings
@@ -93,6 +94,7 @@ def get_cost_calculator() -> ModelCostCalculator:
 
 
 def get_document_service(
+    request: Request,
     connection: ConnectionDependency,
     settings: SettingsDependency,
     document_repo: Annotated[SqliteDocumentRepository, Depends(get_document_repo)],
@@ -106,6 +108,8 @@ def get_document_service(
         lambda: transaction(connection),
         settings,
         cleanup_upload=storage.remove_upload,
+        upload_lock=request.app.state.upload_lock,
+        analysis_in_use=TriagePersistence(connection).has_jobs,
     )
 
 

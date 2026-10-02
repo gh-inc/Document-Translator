@@ -206,7 +206,7 @@ Document IR with normalized layout semantics, and a Markdown bridge
 ## 5. Data model (SQLite, WAL)
 
 **documents** — `id`, `filename` (sanitized), `format`, `size_bytes`,
-`page_count`, `storage_path`, `status` (`uploaded|extracted|failed`),
+`page_count`, `storage_path`, `status` (`uploaded|analyzing|extracted|failed`),
 `error_code`, `created_at`
 
 **blocks** — `id`, `document_id`, `seq`, `source_text`, `source_hash`,
@@ -420,9 +420,8 @@ records each attempt. `ModelCostCalculator` uses the Stage 2 plan's explicit
 pricing snapshot; changes to provider prices require a table update.
 
 **Where the agent earns its keep — triage.** The document is unknown; someone
-must look inside it with tools (`get_text_sample`, `detect_language`,
-`classify_domain`, `extract_terminology`) and make a judgment shaping all
-downstream chunks. Tool calling is real: the agent decides how many samples
+must look inside it with navigation tools (`read_blocks`, `search_blocks`)
+and make a judgment shaping all downstream chunks. Tool calling is real: the agent decides how many samples
 to pull and whether to look again.
 
 **The agent's output is a persisted, deterministic contract:**
@@ -451,7 +450,8 @@ these terms; it is one of the brief's explicit questions.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/documents` | multipart upload → document + block preview |
+| `POST /api/documents` | multipart upload → analyzing document + block count |
+| `POST /api/documents/{id}/retry-triage` | explicitly recover stuck or degraded triage |
 | `POST /api/jobs` | `{document_id, target_languages[], idempotency_key}` → batch of jobs |
 | `GET /api/jobs/{id}` | status, progress, cost, structured error |
 | `POST /api/jobs/{id}/retry` | re-queue failed chunks (optional raised cost cap) |
@@ -465,10 +465,20 @@ these terms; it is one of the brief's explicit questions.
 Errors are structured: `{error_code, message, retryable}` — never bare
 "Something went wrong".
 
-Stage 5 implements this surface through core document/job services. Uploads
-atomically persist extracted blocks and an English/general/neutral triage stub;
-the stub is replaced by real triage in a later stage. Request connections use
-the shared WAL factory and close after responses, including SSE termination.
+Stage 5 implements this surface through core document/job services. Stage 6 uploads
+atomically persist extracted blocks with status `analyzing`, then schedule
+triage with FastAPI BackgroundTasks and a fresh SQLite connection. The agent
+navigates bounded text snippets and returns `TriageAgentOutput` with a brief
+evidence-based explanation and TranslationPlan; only the plan is persisted.
+Three bounded attempts precede a heuristic degraded fallback. Analysis and the
+`extracted` transition commit together. Jobs require completed analysis and
+return `409 analysis_pending` while it is unavailable. Explicit retry recovers
+process crashes without adding a schema lease. New uploads use content digest
+IDs to reuse their original analysis. Upload/triage locks assume one web process.
+Analysis becomes immutable after the first translation job; retrying a degraded
+plan after that returns conflict to preserve worker/cache consistency. Atomic
+enqueue rejects stale analysis terms after concurrent triage replacement.
+Request connections use the shared WAL factory and close after responses, including SSE termination.
 Idempotency checks run within aggregate insertion transactions, and partially
 created language batches can be completed by repeating the same request.
 Retries preserve cached work and billed attempts; internal retry budgets survive
