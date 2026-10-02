@@ -262,3 +262,81 @@ DT-8 (`ffd8cd5`), and DT-9 (`5c9777b`), each containing its tests and approved
 plan. All commit hooks passed. DT-10 records integration/documentation and task
 hash backfills. The pre-existing untracked `TEST_TASK.md` remains outside this
 stage's commits. No history was amended or rebased.
+
+### 2026-10-02 — Stage 1 persistence plan corrections
+
+**User request:** refine the Stage 1 implementation plan before execution and
+record the corrections.
+
+**Corrections to the draft plan:**
+
+1. **Direct `aiosqlite` approved.** SQLAlchemy was rejected for the persistence
+   layer; raw SQL via `aiosqlite` matches the existing `schema.sql` and is the
+   fastest path for the MVP.
+2. **Active connection injected into repositories.** Repositories must be
+   initialized with `__init__(self, connection: aiosqlite.Connection)`; the
+   factory/application layer owns connection open/close. Opening a connection
+   inside every repository method is forbidden.
+3. **Parameterized queries only.** All SQL must use `?` placeholders; string
+   concatenation or f-strings in SQL are disallowed.
+4. **UTC datetimes.** All stored datetimes must be UTC ISO 8601 strings to avoid
+   lease expiry bugs in `release_expired_chunks`, `claim_job`, and `claim_chunk`.
+5. **FilesystemStorage path traversal protection.** `os.path.abspath` plus a
+   base-directory check is required.
+
+**Note:** the initial correction was mistakenly written to `DECISIONS.md`; it
+was removed from there and logged in this file, which is the correct place for
+AI-usage and correction records. The approved Stage 1 plan in
+`docs/plans/2026-10-02-stage-1-persistence.md` already reflects all five
+points.
+
+### 2026-10-02 — Orchestrated Stage 1 persistence implementation
+
+**User request:** execute `docs/plans/2026-10-02-stage-1-persistence.md` with
+planning, decomposition, delegation, review, validation, and commits.
+
+**Decomposition:** DT-11 settings; DT-12 connection factory and transaction
+boundary; DT-13 repositories; DT-14 filesystem storage; DT-15 integration,
+review, and documentation. Previously completed DT-7–DT-9 are not reused.
+
+**Delegation:** three `worker` agents have distinct ownership:
+`persistence_foundation` owns Settings, the factory, and their tests;
+`sqlite_repositories` owns all three repository implementations and contract
+tests; `filesystem_storage` owns the storage adapter and its tests. The main
+agent owns independent integration tests and review, documentation, full checks,
+and commits. Repository work depends on the foundation's agreed transaction
+helpers; filesystem work proceeds independently. Installed aiosqlite source was
+read before implementing cursor and connection APIs.
+
+**Corrections made before implementation:** the factory test's in-memory WAL
+assertion was impossible, and cursor fetch calls were not awaited. Acceptance
+tests now use file-backed databases and proper async cursor contexts. The
+filesystem helper's string-prefix containment accepted sibling directories;
+canonical path-component containment replaces it. Ordinary writes require a
+caller-owned transaction, while aggregate enqueue owns its transaction. Internal
+transaction helpers handle cancellation and serialize sharing of a connection.
+The queued-only claim example was extended to recover expired running/assembling
+jobs per the architecture, preserving assembling status. Job cost/usage is
+updated with every attempt in the same transaction. These are implementation
+corrections; no core models, ports, or DDL are changed.
+
+**Independent review and corrections:** a fourth, read-only explorer agent,
+`persistence_review`, reviewed transaction cancellation, shared-connection
+ownership, and leases. Foreign tasks now cannot read or write through a
+connection owned by another managed transaction. Cancellation before COMMIT
+rolls back; after COMMIT starts, its completion is shielded and a successful
+commit is reported as success. An optional concrete `worker_id` constructor
+binding fences job/chunk mutations to live owner leases, including parent jobs.
+Worker incarnations must have distinct IDs. Unscoped instances remain available
+for administrative operations; attempt costs remain recorded after lease loss.
+The reviewer found no remaining defect in these corrections.
+
+**Validation:** the main agent added eight integration tests covering two real
+WAL connections, concurrent claims/enqueue/cache, rollback, persistence across
+reopen, lease recovery, connection ownership, and cancellation. `make test`
+passed 145 tests with the two existing Pydantic `register` warnings;
+`make lint` and `make typecheck` passed. The sandbox stalled aiosqlite and
+thread-backed filesystem I/O, so acceptance tests were rerun with authorized
+execution outside the sandbox using real connections and threads. No live LLM
+calls were made. Separate commits cover DT-11–DT-15; unrelated existing changes
+are excluded.
