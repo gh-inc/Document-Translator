@@ -105,6 +105,23 @@ def test_provider_settings_read_environment_and_validate_values(monkeypatch) -> 
         Settings(fake_fail_mode="400")
 
 
+def test_settings_dotenv_ignores_unrelated_deployment_variables(tmp_path: Path) -> None:
+    env_file = tmp_path / "measurement.env"
+    env_file.write_text(
+        "OPENAI_API_KEY=sk-dotenv-test-value\n"
+        "LLM_PROVIDER=openai\n"
+        "COMPOSE_PROJECT_NAME=document-translator\n"
+        "LEGACY_SERVICE_OPTION=preserved-outside-app-settings\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.openai_api_key.get_secret_value() == "sk-dotenv-test-value"
+    assert settings.llm_provider == "openai"
+    assert "sk-dotenv-test-value" not in repr(settings)
+
+
 def test_worker_settings_defaults_and_validate_constraints(monkeypatch) -> None:
     for name in (
         "WORKER_ID",

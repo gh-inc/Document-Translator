@@ -5,11 +5,16 @@ from typing import Literal
 from uuid import uuid4
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Environment-backed application and worker settings."""
+
+    # Deployment env files often include variables for Compose or adjacent
+    # services. Ignore those unrelated entries while validating this app's
+    # own settings.
+    model_config = SettingsConfigDict(extra="ignore")
 
     database_path: Path = Path("/data/app.db")
     upload_storage_path: Path = Path("/data/uploads")
