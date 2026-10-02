@@ -20,7 +20,7 @@ the **Opaque Metadata** pattern: the core pipeline handles only `seq` +
 `source_text`; all format specificity travels as an opaque JSON blob on the
 Block and is interpreted solely by that format's extractor/renderer pair.
 Renderers re-open the original uploaded file as the canvas (§3, §4, §6).
-Rationale and rejected alternatives are recorded in DECISIONS.md §2.
+Rationale and rejected alternatives are recorded in DECISIONS.md §3.
 
 ---
 
@@ -87,9 +87,9 @@ report the number in DECISIONS.md.
 | 5 | Bulk translation | Plain parallel completions via `LLMProvider` port, **structured per-block output** | Agent loop per chunk: cost, latency, nondeterminism |
 | 6 | MCP transport | FastMCP, streamable-http, own container | stdio: can't run as a compose service reachable from host editors |
 | 7 | Frontend | React + Vite + TS SPA, built to static, served by FastAPI | htmx: weaker signal for a full-stack role |
-| 8 | Formats | PDF (PyMuPDF) + DOCX (python-docx) via the **Opaque Metadata** pattern — the core sees only text + seq | Normalized layout IR: over-engineering; Markdown bridge: fatal layout loss (DECISIONS.md §2) |
+| 8 | Formats | PDF (PyMuPDF) + DOCX (python-docx) via the **Opaque Metadata** pattern — the core sees only text + seq | Normalized layout IR: over-engineering; Markdown bridge: fatal layout loss (DECISIONS.md §3) |
 | 9 | Datastore | SQLite WAL on a shared volume | Postgres: extra service, no payoff at this scale (§15) |
-| 10 | Default model | `gpt-4o-mini` (env-configurable) | Flagship by default: cost without measured quality need |
+| 10 | Default model | `gpt-4o-mini` (env-configurable) | Flagship by default: cost without measured quality need — full record in DECISIONS.md §2 |
 | 11 | Parallel context | **Source-side only** (plan + glossary + neighboring source blocks) | Previous-chunk *translation* = serial dependency chain, kills parallelism |
 
 ---
@@ -188,7 +188,7 @@ The contract:
 - **Adding a format in 10 minutes** = one module implementing both ports +
   one registry entry. DOCX is the proof the PDF design was not overfit.
 
-Rejected alternatives (full rationale in DECISIONS.md §2): a universal
+Rejected alternatives (full rationale in DECISIONS.md §3): a universal
 Document IR with normalized layout semantics, and a Markdown bridge
 (PDF → MD → translate → MD → PDF).
 

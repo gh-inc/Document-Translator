@@ -47,7 +47,7 @@ options with trade-offs, then redrafted twice under review.
    **Revised to the Opaque Metadata pattern:** the core handles only `seq` +
    `source_text`; format specifics travel as opaque JSON on the Block;
    renderers re-open the original file as the canvas. Full rationale in
-   DECISIONS.md §2.
+   DECISIONS.md §3.
 
 **Assessment of the collaboration pattern so far:** the AI was most useful
 as a fast generator of complete, internally consistent first drafts — and
