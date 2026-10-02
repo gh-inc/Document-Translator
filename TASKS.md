@@ -48,7 +48,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-12 | 1 | Add async SQLite connection factory and explicit transaction boundary | done | b152b51 |
 | DT-13 | 1 | Implement document, execution, and cache repositories | done | a261f0c |
 | DT-14 | 1 | Implement async filesystem storage with contained artifact paths | done | 7790553 |
-| DT-15 | 1 | Validate persistence integration and record execution corrections | done | pending commit |
+| DT-15 | 1 | Validate persistence integration and record execution corrections | done | 0758d5e |
 
 ### Stage 1 execution decomposition (2026-10-02)
 
