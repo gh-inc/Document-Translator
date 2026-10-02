@@ -6,6 +6,51 @@ services; a separate worker translates and renders the original document.
 See [architecture](ARCHITECTURE.md), [REST usage](docs/api.md),
 [worker operations](docs/worker.md) and [trade-offs](DECISIONS.md).
 
+## Architecture and acceptance criteria
+
+```text
+Browser ───────► web (FastAPI) ─┐
+Claude / Cursor ► mcp (FastMCP) ─┼──► shared core services
+                    worker ─────┘    claims, translates, renders
+                                     │
+                 shared /data volume: SQLite WAL, uploads, outputs
+```
+
+`web` and `mcp` are thin doors onto the same core services. The separate worker
+executes queued translations. All three processes share `/data` for durable job
+state and document files.
+
+This is for product and operations teams that need reliable translations of
+business documents with predictable operations. It is not aimed at professional
+linguists who need computer-assisted translation (CAT) tools and workflows.
+
+| Acceptance criterion | Implementation and known limit |
+| --- | --- |
+| Resilience | SQLite WAL and chunk leases let a restarted worker resume from committed work after `kill -9`. A committed translation is not repeated; a provider timeout with an unknown outcome can still cause a duplicate invocation and unreported billing. |
+| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. The `cache_hits_total` metric is deferred and stays zero; persisted spend also omits triage usage and billing from ambiguous invocations. |
+| Multi-language | One submission creates independently tracked jobs per target language, with separate progress and cost. A failure in one language does not stop the others. |
+
+| Hard requirement | Where it lives |
+| --- | --- |
+| Upload a PDF through the web app and download a translated PDF | `frontend/`, `app/api/`, document/job services, and the PDF extractor/renderer |
+| Real OpenAI API behind a provider interface | `app/adapters/llm/openai_provider.py`; tests use the fake provider |
+| OpenAI Agents SDK with tool calling | `app/adapters/llm/triage_agent.py` and its navigation tools |
+| MCP usable from Claude Code and Cursor | `app/mcp_server/` and the editor setup below |
+| At least two document formats | PDF and DOCX adapters in `app/adapters/formats/` |
+| Resume translation after `kill -9` | Worker leases and persisted chunk checkpoints in `app/worker/` and persistence adapters; exercised by `scripts/chaos-restart.sh` |
+| Fresh-clone Docker Compose deployment | `Dockerfile`, `docker-compose.yml`, and the CI image build |
+| Required submission documents | `README.md`, `PROMPTS.md`, and `DECISIONS.md` |
+
+### Where an agent earns its keep
+
+The OpenAI Agents SDK is used for triage only. Triage must inspect an unknown
+document whose text can exceed one context window, navigate selected text with
+tools, and make a judgment about domain, register, and terminology that shapes
+every downstream chunk. Bulk translation maps a fixed prompt over independent
+chunks; it deliberately avoids an agent loop to keep work deterministic,
+parallel, and predictable in cost. See [ARCHITECTURE.md](ARCHITECTURE.md) for
+the full design.
+
 ## Compose quickstart
 
 From a clean clone with Docker and Compose installed:
@@ -28,16 +73,10 @@ For live translation copy `.env.example` to `.env`, configure the key, set
 Keep `.env` local. The fixed upload limits are enforced by the services, rather
 than configurable `MAX_FILE_SIZE_MB` or `MAX_PAGES` environment variables.
 
-Run the reproducible offline crash check:
-
-```bash
-./scripts/chaos-restart.sh
-```
-
-It creates an isolated Compose project, kills the worker while chunks remain,
-then compares durable SQLite checkpoints after restart. See
-[operator notes](docs/ops.md) for prerequisites, `--keep`, counters and the
-at-least-once boundary for interrupted provider requests.
+The offline crash check in the verification table creates an isolated Compose
+project, kills the worker while chunks remain, then compares durable SQLite
+checkpoints after restart. See [operator notes](docs/ops.md) for `--keep`,
+counters and the at-least-once boundary for interrupted provider requests.
 
 ## Local offline quickstart
 
@@ -208,20 +247,46 @@ record. Successful analysis is reused and analysis already used by jobs stays
 immutable. Processes must share the same local database/data filesystem;
 this deployment targets Linux with local SQLite WAL storage.
 
-## Tests and operations
+## Verification commands and prerequisites
 
-```bash
-make test
-make lint
-make typecheck
-npm --prefix frontend test
-npm --prefix frontend run typecheck
-npm --prefix frontend run build
-```
+The automated suite never calls the real provider. Live tests are opt-in because
+they call OpenAI and can incur charges. Locally, application settings read the
+process environment; they do not automatically load `.env`. Compose loads
+`.env`, and `measure_quality` can load a file when passed `--env-file`.
 
-Offline tests use fake providers, real temporary WAL databases, FastMCP's
-in-memory client and worker-produced PDF/DOCX artifacts. Real OpenAI tests
-require explicit `make test-live` and configured credentials.
+| Command | What it covers | Prerequisites |
+| --- | --- | --- |
+| `make test` | Offline backend suite, using fake providers | Python dependencies from `uv sync`; no key, Docker, or running services |
+| `make test-live` | Opt-in tests against the real OpenAI provider | Exported OpenAI key, network access, and possible API charges; no Docker or running services |
+| `make lint` | Ruff checks and formatting | Python dependencies; no key, Docker, or running services |
+| `make typecheck` | Backend mypy checks | Python dependencies; no key, Docker, or running services |
+| `npm --prefix frontend test` | Frontend tests | Node.js and frontend dependencies installed with `npm --prefix frontend ci`; no key, Docker, or running services |
+| `npm --prefix frontend run typecheck` | Frontend TypeScript checks | Node.js and frontend dependencies installed; no key, Docker, or running services |
+| `npm --prefix frontend run build` | Production frontend bundle | Node.js and frontend dependencies installed; no key, Docker, or running services |
+| `uv run pre-commit run --all-files` | Ruff hooks and gitleaks secret scan | Python dependencies from `uv sync`; hooks may need network access on first run; no OpenAI key, Docker, or running services |
+| `make up` | Build and start the Compose stack | Docker Engine and Compose; services are started and remain running; fake provider is the default |
+| `docker compose up --build -d --wait` | Fresh build, startup, and container health checks | Docker Engine and Compose; starts services; no key with the default fake provider |
+| `./scripts/chaos-restart.sh` | Isolated fake-provider Compose run that kills and restarts a worker, then checks durable recovery | Docker Engine, Compose, and available local ports; builds/starts its own services; no key |
+| `docker compose config --quiet` | Compose configuration validation without printing resolved settings or starting containers | Docker Compose CLI; no Docker daemon, key, or running services |
+| `docker build .` | Build the production image | Docker Engine; may need network access to fetch base images/dependencies; no key or running services |
+| `uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env` | Live-only quality and cost measurement through the real pipeline; optionally add `--reference PATH` or `--target-language fr` | `LLM_PROVIDER=openai`, OpenAI key in the selected environment file, network access, and API charges; no Docker or running services |
+| `git status --short` | Check for remaining working-tree changes | Git repository; no key, Docker, or running services |
+| `git log --oneline -5` | Inspect recent delivery history | Git repository; no key, Docker, or running services |
+| `curl -fsS http://localhost:8000/healthz` and `curl -fsS http://localhost:8000/readyz` | Check Compose web liveness and readiness | Web service running on port 8000; no OpenAI key with the fake provider |
+
+The `--env-file` option above is specific to `measure_quality`; other local
+commands need settings exported in their process environment. For example,
+copy `.env.example` to `.env` for Compose, or export the needed values before
+running local services and `make test-live`.
+
+Offline backend tests use fake providers, real temporary WAL databases,
+FastMCP's in-memory client and worker-produced PDF/DOCX artifacts. The explicit
+measurement command rejects a fake provider and reports JSON plus a readable
+table. Without `--reference`, chrF is labeled as back-translation, a coarse
+information-preservation proxy. Persisted bulk attempt cost excludes triage and
+unknown transport usage; one job duration cannot establish a population p95 or
+a parallelism comparison. Measurements and gaps are recorded in
+[DECISIONS.md](DECISIONS.md).
 
 ## 3 a.m. runbook
 
@@ -262,22 +327,3 @@ and retry spend are obtained from SQLite by the measurement command. Unknown
 usage from a killed or timed-out invocation cannot be reconstructed from a
 missing attempt row. See [operator notes](docs/ops.md) and
 [worker operations](docs/worker.md).
-
-## Live quality and cost measurements
-
-This explicit command uses the real pipeline in isolated temporary storage:
-
-```bash
-uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env
-uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env --reference /path/to/reference.txt
-```
-
-Set `LLM_PROVIDER=openai` in the chosen environment file; specify another target
-with `--target-language fr`. The command rejects a
-fake provider and missing credentials before work starts, emits JSON on stdout
-and a readable table on stderr. Without a reference it labels chrF as
-back-translation, a coarse preservation proxy. Recorded cost comes from bulk
-attempts; triage and unknown transport usage have no durable billing record.
-A single job duration is one observation and cannot establish a population p95
-or a parallelism comparison. Measured results and explicit gaps are recorded in
-[DECISIONS.md](DECISIONS.md).

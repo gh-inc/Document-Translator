@@ -57,11 +57,16 @@ translator workflows, or review/approval chains.
    *invocations* are at-least-once under ambiguous failures (timeout after the
    provider processed the request): the OpenAI Chat Completions API has no
    client idempotency keys, so duplicate provider cost in that narrow window
-   is possible, is **measured** (§5, `chunk_attempts`), and is reported.
-2. **Cost discipline:** translating the same document a second time to the
-   same language costs ≈ $0 in LLM spend, demonstrably, via the cache-hit
-   metric. Repetition *within* a document is also translated once (cache is
-   block-level, §5).
+   is possible. Attempt and job cost totals include only usage reported by the
+   provider and estimate-priced by the application; usage not returned after
+   an ambiguous failure is unknown and excluded from those totals.
+2. **Cost discipline:** cached blocks are not bulk-translated again for the
+   same document and language, so repeat bulk translation spend is expected to
+   be near $0; repeated blocks within a document also use the block cache.
+   This repeat-cost outcome has not been measured in a live second-run
+   comparison. Direct cache-hit instrumentation is not persisted or exported
+   today, and job cost totals cover only reported chunk usage, not triage or
+   unknown provider usage.
 3. **Multi-language:** one upload → three target languages in one action, each
    tracked, progressed, and billed independently; a failure in one does not
    affect the others.
@@ -82,7 +87,7 @@ report the number in DECISIONS.md.
 |---|----------|--------|----------------------------|
 | 1 | Language & framework | Python 3.12 + FastAPI | Node/TS vs. polyglot: full record in DECISIONS.md §1 |
 | 2 | Job orchestration | **DB-backed queue in SQLite (WAL) + chunk-level checkpointing** | Celery+Redis: broker loses unacked tasks on `kill -9`; checkpointing still hand-written; more moving parts in compose |
-| 3 | Units of work | **Block = semantic/cache/render unit. Chunk = execution/retry/checkpoint unit. Attempt = cost unit.** | "Chunk is everything": conflates semantics with batching |
+| 3 | Units of work | **Block = semantic/cache/render unit. Chunk = execution/retry/checkpoint unit. Attempt = provider-usage accounting unit.** | "Chunk is everything": conflates semantics with batching |
 | 4 | Agent placement | **Triage stage only** (openai-agents SDK, tool calling), output persisted as a contract | Agents on bulk translation = expensive `if` × N chunks |
 | 5 | Bulk translation | Plain parallel completions via `LLMProvider` port, **structured per-block output** | Agent loop per chunk: cost, latency, nondeterminism |
 | 6 | MCP transport | FastMCP, streamable-http, own container | stdio: can't run as a compose service reachable from host editors |
@@ -249,9 +254,12 @@ concurrent executions of the same block cannot commit twice.
 **chunk_attempts** — `id`, `chunk_id`, `attempt_no`, `tokens_in`,
 `tokens_out`, `cost_usd`, `latency_ms`, `outcome`
 (`ok|retryable_error|fatal_error`), `error_detail`, `created_at`.
-`job.cost_usd = SUM(chunk_attempts.cost_usd)` — **all** provider spend,
-including retried and ambiguous attempts. This is what makes the retry cost
-visible and the "what does one document cost" answer honest.
+`job.cost_usd = SUM(chunk_attempts.cost_usd)` — the sum of application estimates
+for provider-reported usage persisted on attempt rows. It includes known usage
+from retries, but is not total provider billing: triage usage is not recorded
+in `chunk_attempts`; a transport failure can leave usage unknown; and a worker
+killed before recording an outcome may leave no attempt row. These costs are
+excluded from persisted job totals.
 
 ### 5.1 Guarantees (exactly what we do and do not promise)
 
@@ -274,7 +282,7 @@ connection setup and SQL live in the persistence adapter.
 |---|---|---|
 | Enqueue | Idempotent | `idempotency_key` UNIQUE; job+chunks written in one transaction |
 | Committed translation | **Exactly-once** | `UNIQUE(translation_key, block_id)` + `INSERT OR IGNORE` |
-| Provider invocation | **At-least-once** under ambiguity | No idempotency keys in the Chat Completions API; retries after timeout may double-bill. Measured via `chunk_attempts`, capped per job, reported |
+| Provider invocation | **At-least-once** under ambiguity | No client idempotency key; retries after timeout may be billed twice. Attempt rows and cost totals include reported usage when available; unreturned usage is unknown and excluded, and a process interruption may leave no attempt row. Triage usage is outside `chunk_attempts`. |
 | Job progress | Monotonic, durable | State transitions in short transactions; SSE reads the DB |
 | Worker crash | Resume from last committed chunk | Job lease + **chunk leases**: `inflight` with expired lease → `pending` |
 
@@ -571,7 +579,7 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
 | Unsupported type | `unsupported_format` with the list of supported types |
 | Provider 429/5xx/timeout | Per-chunk retry, exp backoff + jitter, ≤4 attempts; exhausted → chunk fails, job continues → `completed_with_errors` |
 | Provider 400 / context length | Fatal for the chunk immediately (not retryable), surfaced distinctly |
-| Ambiguous timeout (provider may have processed) | Retried → at-least-once billing possible; recorded in `chunk_attempts`, counted in cost metrics |
+| Ambiguous timeout (provider may have processed) | Retried → duplicate billing is possible. Reported usage is recorded when available; otherwise the charge is unknown and excluded from attempt/job cost totals (or no row exists if the worker stops before recording it). |
 | `kill -9` mid-translation | Job + chunk leases expire → reclaim → resume from last committed chunk; committed blocks are cache hits, never re-sent |
 | Double submit (same key) | Second `POST /api/jobs` returns the existing job (`idempotency_key` UNIQUE) |
 | Triage agent failure | Heuristic degraded plan, `triage_status=degraded`, job proceeds |
@@ -610,18 +618,21 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
   worker logs claim/heartbeat/retry/commit events.
 - **Metrics (`/metrics`):** chunk LLM latency histogram, job duration
   histogram, `llm_errors_total{code}`, `cache_hits_total`,
-  `llm_cost_usd_total`, `llm_cost_retry_share` (spend in attempts after the
-  first), `jobs_by_status` gauge, worker heartbeat age.
+  `llm_cost_usd_total`, `llm_cost_retry_share` (known persisted attempt cost
+  after the first attempt), `jobs_by_status` gauge, worker heartbeat age. Cost
+  metrics represent provider-reported chunk usage estimates, not total billing.
 - **Health:** `/healthz` (liveness) and `/readyz` (DB, storage,
   stale inflight leases) — not conflated.
 - **Runbook:** README section "3 a.m." — what to look at first, mapped to the
   metrics above.
 
-Stage 9 delivery exports durable job counts and known cost/error totals.
+Stage 9 delivery exports durable job counts and known cost/error totals; these
+cost totals are estimates from provider-reported usage, not complete billing.
 `cache_hits_total` remains zero without persisted hit instrumentation.
 Latency histograms, error-code labels, retry-share metrics, and direct worker
 heartbeat age are not exported; the measurement command derives available
-latencies/retry spend from `chunk_attempts`. Compose health checks web HTTP
+latencies and known retry spend from `chunk_attempts`, but cannot include usage
+that was never reported. Compose health checks web HTTP
 liveness, worker process liveness, and the MCP transport without adding public
 health endpoints. Readiness cannot detect an absent idle worker.
 
@@ -629,12 +640,18 @@ health endpoints. Readiness cannot detect an absent idle worker.
 
 ## 14. Cost & performance measurement plan
 
-- Pricing table per model; every provider call recorded in `chunk_attempts`;
-  `job.cost_usd` is a sum over reality, not an estimate.
-- DECISIONS.md reports, measured on a fixed sample document: **cost per
-  document** (and what dominates it — including the retry share), **p95 chunk
-  latency**, **p95 job latency** (before/after enabling chunk parallelism —
-  numbers, not adjectives), and the chrF proxy score (§1.3).
+- Pricing table per model; the worker records each attempt outcome when it can
+  persist it. `job.cost_usd` sums application estimates from provider-reported
+  usage, including known usage on retries; it is not a provider invoice total.
+  Triage usage is not recorded in `chunk_attempts`; usage not returned after
+  an ambiguous failure is unknown and excluded.
+- DECISIONS.md reports, on a fixed sample document, the **persisted bulk usage
+  estimate per document** and what it includes (including recorded retry
+  share), observed chunk/job durations, and the chrF proxy score. It reports
+  population p95 values only when the sample supports them; otherwise it gives
+  observed durations and marks the p95 comparison unmeasured. It distinguishes
+  estimates from total provider billing and states other measurement gaps or
+  unavailable usage explicitly.
 
 ---
 
@@ -644,7 +661,7 @@ health endpoints. Readiness cannot detect an absent idle worker.
 |---|---|---|
 | OCR for scanned PDFs | Tesseract/vision pipeline is a project of its own | Scanned docs rejected with a clear error |
 | Pixel-perfect PDF layout | Reflow/overflow handling is unbounded | Text-oriented PDFs only, stated in §6.6 |
-| Horizontal worker scaling | Single worker with bounded async concurrency is sufficient for the assessment workload — **measured in §14, not asserted** | Scaling out would require stronger queue/claiming semantics (real broker); stated, not built |
+| Horizontal worker scaling | Single worker with bounded async concurrency is the chosen assessment design; no multi-worker scaling comparison is claimed | Scaling out would require stronger queue/claiming semantics (real broker); stated, not built |
 | Auth / multi-tenancy | Out of scope for an assessment | Anyone on the network can use it — fine for local compose |
 | Glossary editing UI | Triage glossary is automatic | User can't override terminology |
 | Sequential polish pass w/ translated context | Time; plan+glossary coherence covers the common case | Style seams possible between distant chunks |
@@ -706,7 +723,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | `docker compose up --build` works from a fresh clone | Single Docker image, three processes, shared `/data` volume | §3, §16 |
 | `README.md`: architecture, decisions, testing guide | Required deliverable; includes quickstart, testing guide, 3 a.m. runbook | §16 |
 | `PROMPTS.md`: AI-usage log incl. rejected output | Required deliverable; maintained as work proceeds | §16 |
-| `DECISIONS.md`: cuts, trade-offs, measured cost/p95, 3 more weeks | Required deliverable; measured numbers filled at implementation end | §16 |
+| `DECISIONS.md`: cuts, trade-offs, measured cost/p95, 3 more weeks | Required deliverable; reports supported measurements and states gaps, including where persisted usage does not establish total provider billing | §16 |
 
 ### 18.2 Evaluation criteria from the brief
 
@@ -716,7 +733,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | **Engineering fundamentals — data model & API** | Document IR, job/chunk/attempt model, REST surface | §4, §5, §8 |
 | **Engineering fundamentals — layering** | `core/` is independent; `api/` and `mcp_server/` are thin doors | §3, §4 |
 | **Engineering fundamentals — concurrency** | Bounded async parallelism (semaphore 8); short DB transactions | §5.2, §6 |
-| **Engineering fundamentals — idempotency & retries** | `idempotency_key`; exactly-once cache; at-least-once invocations measured | §5.1, §11 |
+| **Engineering fundamentals — idempotency & retries** | `idempotency_key`; exactly-once cache; at-least-once invocations, with only provider-reported usage represented in attempt cost totals | §5.1, §11 |
 | **Engineering fundamentals — failure handling** | Failure matrix covering corrupt, scanned, oversized, provider errors, crashes | §11 |
 | **Engineering fundamentals — tests** | Unit, contract, integration, chaos, regression pins | §12 |
 | **Engineering fundamentals — observability** | Structured logs, Prometheus `/metrics`, `/healthz`, `/readyz`, 3 a.m. runbook | §13 |

@@ -1,8 +1,8 @@
 # DECISIONS.md
 
 **Status:** Living document. Decision records are written as decisions are
-made; the measured numbers (cost per document, p95 latency, quality score)
-are filled in at the end of implementation.
+made. Measurements and their known limits are recorded in the relevant
+sections; gaps are labeled explicitly.
 
 This file records what we chose **not** to build and why, the trade-offs we
 took knowingly, and what we would build with three more weeks. The
@@ -206,8 +206,8 @@ impact at the end of implementation:
 
 - OCR for scanned PDFs (rejected with a clear `scanned_pdf` error instead)
 - Pixel-perfect PDF layout (text-oriented fidelity only, ARCHITECTURE.md §6.6)
-- Horizontal worker scaling (single worker + bounded async concurrency,
-  measured in §3 before claimed)
+- Horizontal worker scaling (single worker + bounded async concurrency; no
+  multi-worker scaling comparison was measured, and none is claimed)
 - Auth / multi-tenancy
 - Glossary editing UI (triage glossary is automatic)
 - Sequential polish pass with translated context
@@ -217,15 +217,18 @@ impact at the end of implementation:
 
 ## 6. Measured numbers
 
-_Pending implementation. To be reported on a fixed sample document:_
+Measurements are recorded in two places. The fixed-sample PDF renderer and
+layout results are in [Stage 3 format measurements](#stage-3-format-measurements).
+The live provider run reports cost, observed chunk and job durations, the
+back-translation chrF proxy, preservation checks, and the limits of those
+measurements in [Stage 9 live measurements](#stage-9-live-measurements).
 
-- **Cost per document** — and what dominates it, including the retry share
-  (`chunk_attempts` makes duplicate spend from ambiguous provider failures
-  visible rather than hidden)
-- **p95 chunk latency** and **p95 job latency** — before/after enabling chunk
-  parallelism; numbers, not adjectives
-- **Quality proxy** — back-translation chrF (EN→DE→EN vs. original), used as
-  a coarse proxy for information preservation, not as a direct quality metric
+Several requested comparisons remain explicitly unmeasured: a population p95
+job latency, before/after chunk-parallelism latency, date/currency/placeholder
+preservation, supplied-reference chrF, and total provider billing that includes
+triage and ambiguous uncheckpointed usage. The Stage 9 table gives the reason
+for each gap. Its single forward chunk latency is one observation, not a
+population estimate.
 
 ### Stage 3 format measurements
 
@@ -257,8 +260,9 @@ does not lose content. Table-heavy documents need adapter-specific cell layout
 or a clean-regeneration strategy in later work. Changing the default to full
 regeneration now would discard the original canvas without improving the
 sample's ordinary paragraphs. This measurement does not assess German quality:
-FakeProvider only prefixes text. Actual translation quality, chrF, cost, and
-latency measurements remain for the later measurement stage.
+FakeProvider only prefixes text. The live run's back-translation chrF proxy,
+cost, and observed durations are recorded in [Stage 9 live measurements](#stage-9-live-measurements);
+the proxy does not establish actual translation quality.
 
 The renderer embeds PyMuPDF's bundled Droid Sans Fallback font buffer under a
 private name so insertion uses the same glyph widths as fitting. A CJK alias

@@ -736,3 +736,39 @@ approved verification approach requires installing it in the runtime image.
 **Result:** the plan is in
 `docs/plans/2026-10-02-stage-9-e2e-chaos-observability.md`; the readiness
 decision is recorded in `DECISIONS.md` §10.
+
+### 2026-10-03 — Stage 10 delegated execution and review
+
+**Request:** execute the approved submission plan with orchestration,
+delegation, verification and commits.
+
+**Delegation:** separate agents owned README reviewer answers/testing guide;
+DECISIONS, Docker CI and assessment packaging; and isolated clean-clone
+Compose/MCP acceptance. A fourth agent independently reviewed the combined
+documentation and CI changes. The orchestrator owned task registration,
+integration, submission evidence and delivery.
+
+**Corrections to generated output:** the first README draft removed the
+runnable Compose quickstart while consolidating commands. Review restored it
+because setup instructions need to remain directly usable. The requirement
+map also needed explicit PDF web delivery and restart recovery rows; the
+pre-commit command was changed to `uv run pre-commit` for the local environment.
+Review required the editor-client result to remain distinct from successful
+MCP protocol checks; an isolated configuration does not prove a pristine
+client installation.
+
+Final review also rejected the architecture's claim that all ambiguous provider
+billing is measured. The documentation now distinguishes known persisted bulk
+attempt cost from unknown timeout/uncheckpointed usage and unrecorded triage
+spend, and does not claim an unperformed scaling comparison.
+The same review aligned cache-hit instrumentation and population-p95 claims
+with the explicit unmeasured limits, retaining the intended acceptance goals.
+
+**Result:** measured-number pointers replace contradictory placeholders;
+unmeasured quality, billing and latency limits remain explicit. CI builds the
+image without provider credentials. The literal submission checklist, fresh
+test counts and runtime/client outcomes are recorded in
+[Stage 10 verification](docs/plans/2026-10-02-stage-10-submission-verification.md).
+No public contracts changed. Existing user-written Stage 10 rulings are
+preserved as a separate uncommitted change; this execution entry is the only
+new PROMPTS content included in the delivery commit.

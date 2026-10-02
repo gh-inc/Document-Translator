@@ -33,6 +33,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 7. MCP server
 8. Frontend (React, Stark Future branding)
 9. Compose delivery, chaos script, and remaining acceptance measurements
+10. Submission documentation, Docker CI, and honest final verification
 
 ## Tasks
 
@@ -105,6 +106,44 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-63 | 9 | Document operator runbook and offline frontend CI | done | 8edd4ad |
 | DT-64 | 9 | Review Stage 9, verify acceptance and deliver commits | done | 8edd4ad |
 | DT-65 | 9 | Publish MCP downloads readable by the host from non-root containers | done | d1a4809 |
+
+| DT-66 | 10 | Record prior assessment relocation and plan restoration | done | d3e5089, 06354ce |
+| DT-67 | 10 | Resolve measurement documentation drift | done | pending delivery hash |
+| DT-68 | 10 | Add reviewer architecture and agent-placement answers | done | pending delivery hash |
+| DT-69 | 10 | Consolidate verification commands and prerequisites | done | pending delivery hash |
+| DT-70 | 10 | Build Docker image in CI | done | pending delivery hash |
+| DT-71 | 10 | Package assessment context and repair live links | done | pending delivery hash |
+| DT-72 | 10 | Record literal submission checklist evidence | done | pending delivery hash |
+| DT-73 | 10 | Verify MCP with an isolated editor client | done | pending delivery hash |
+| DT-74 | 10 | Verify secret hygiene and record delivery commits | done | pending delivery hash |
+| DT-75 | 10 | Run final checks and independently review Stage 10 | done | pending delivery hash |
+
+### Stage 10 execution decomposition (2026-10-03)
+
+DT-67–DT-75 execute [the submission plan](docs/plans/2026-10-02-stage-10-submission.md).
+Delegated ownership: README reviewer answers/testing guide; DECISIONS, ARCHITECTURE, CI and
+assessment packaging; isolated Compose/editor acceptance evidence. Root owns
+TASKS, final verification record, integration, independent review and commits.
+Work runs on `stage-10-submission`; existing user edits in PROMPTS.md remain
+untouched and excluded from commits. Brief and roadmap relocation was already
+present at start; verify it rather than repeat it. No public contracts change.
+No remote, push or history rewrite. Record unavailable checks honestly.
+
+Stage 10 implementation and independent review are complete. Verification:
+493 backend tests, 66 frontend tests, lint, backend/frontend typecheck,
+frontend production build, Docker build/Compose configuration and fresh-clone
+REST PDF/MCP PDF+DOCX acceptance passed. Pre-commit hooks and the redacted
+49-commit history secret scan passed. Claude Code's isolated-config verification
+was attempted but remains unverified: account credit was insufficient and no
+client-created jobs appeared. A pristine client installation and Cursor were
+not tested. DT-73 records the completed verification attempt, not editor
+acceptance. The remaining client prerequisite is explicit in
+[Stage 10 verification](docs/plans/2026-10-02-stage-10-submission-verification.md).
+The isolated Compose stack/volume was removed; existing containers and prior
+user edits remain intact. Delivery hashes are backfilled after the content
+commit, without rewriting history.
+Final review also corrected ARCHITECTURE's unsupported all-provider-billing
+and scaling-measurement claims to match the recorded implementation limits.
 
 ### Stage 9 execution decomposition (2026-10-03)
 

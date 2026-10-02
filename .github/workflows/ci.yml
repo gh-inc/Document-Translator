@@ -23,3 +23,5 @@ jobs:
       - run: npm --prefix frontend run typecheck
       - run: npm --prefix frontend test
       - run: npm --prefix frontend run build
+      - name: Build Docker image
+        run: docker build --tag document-translator:ci .
