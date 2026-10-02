@@ -40,3 +40,22 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-4 | 0 | Verify opaque metadata and contract architecture invariants | done | 412af38 |
 | DT-5 | 0 | Record approved contract corrections and persistence requirements | done | 10e7793 |
 | DT-6 | 0 | Implement approved domain models and atomic repository ports | done | 6837492 |
+| DT-7 | 1 | Finalize strict Pydantic core models (1:1 record-to-column) | done | |
+| DT-8 | 1 | Finalize core repository ports with aggregate create_job_with_chunks | in-progress | |
+| DT-9 | 1 | Add SQLite persistence schema with claim-loop indexes | in-progress | |
+| DT-10 | 1 | Integrate approved plans, validate implementation, and record orchestration | in-progress | |
+
+### Stage 1 execution decomposition (2026-10-02)
+
+- **DT-7:** add missing record models and attempt outcomes, forbid extra model
+  fields, preserve opaque nested metadata, and add focused model validation tests.
+- **DT-8:** return persisted analysis records, carry explicit chunk-block join
+  records in aggregate enqueue, and update repository port contract tests.
+- **DT-9:** add the approved DDL/package and verify schema loading, indexes,
+  record-to-column parity, uniqueness, foreign keys, and cascading deletion.
+- **DT-10:** coordinate disjoint file ownership, review all changes, update
+  architecture and plan results, run full checks, and backfill task commit hashes.
+
+DT-8 depends on the new record types from DT-7; DT-9 DDL can proceed independently.
+Schema/model parity tests run after DT-7 is ready. Each implementation task gets
+its own commit with its tests and corresponding approved plan.

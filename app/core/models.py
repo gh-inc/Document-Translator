@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentStatus(StrEnum):
@@ -33,8 +33,16 @@ class TriageStatus(StrEnum):
     DEGRADED = "degraded"
 
 
+class AttemptOutcome(StrEnum):
+    OK = "ok"
+    RETRYABLE_ERROR = "retryable_error"
+    FATAL_ERROR = "fatal_error"
+
+
 class Block(BaseModel):
     """Document unit whose format metadata remains opaque to core services."""
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     seq: int
@@ -44,15 +52,19 @@ class Block(BaseModel):
 
 
 class DocumentIR(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     filename: str
     format: str
     size_bytes: int
     page_count: int | None = None
-    blocks: list[Block]
+    blocks: list[Block] = Field(default_factory=list)
 
 
 class TranslationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_language: str
     domain: str
     register: str
@@ -62,6 +74,8 @@ class TranslationPlan(BaseModel):
 
 
 class ChunkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     chunk_id: str
     blocks: list[Block]
     target_language: str
@@ -71,6 +85,8 @@ class ChunkRequest(BaseModel):
 
 
 class ChunkResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     translations: dict[str, str]
     tokens_in: int
     tokens_out: int
@@ -78,12 +94,16 @@ class ChunkResult(BaseModel):
 
 
 class JobError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     error_code: str
     message: str
     retryable: bool
 
 
 class DocumentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     filename: str
     format: str
@@ -95,7 +115,24 @@ class DocumentRecord(BaseModel):
     created_at: datetime
 
 
+class DocumentAnalysisRecord(BaseModel):
+    """Persistence record for the document_analyses table."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    source_language: str
+    domain: str
+    register: str
+    terms: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    triage_status: TriageStatus = TriageStatus.OK
+    created_at: datetime
+
+
 class JobRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     document_id: str
     batch_id: str
@@ -105,7 +142,7 @@ class JobRecord(BaseModel):
     done_chunks: int
     model: str
     prompt_version: str
-    glossary: dict[str, str]
+    glossary: dict[str, str] = Field(default_factory=dict)
     tokens_in: int
     tokens_out: int
     cost_usd: float
@@ -119,6 +156,10 @@ class JobRecord(BaseModel):
 
 
 class ChunkRecord(BaseModel):
+    """Persistence record for the chunks table — 1:1 with table columns."""
+
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     job_id: str
     seq: int
@@ -129,6 +170,8 @@ class ChunkRecord(BaseModel):
 
 
 class ChunkAttemptRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     chunk_id: str
     attempt_no: int
@@ -136,13 +179,25 @@ class ChunkAttemptRecord(BaseModel):
     tokens_out: int
     cost_usd: float
     latency_ms: int
-    outcome: str
+    outcome: AttemptOutcome
     error_detail: str | None
     created_at: datetime
 
 
 class BlockTranslationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     translation_key: str
     block_id: str
     translated_text: str
     created_at: datetime
+
+
+class ChunkBlockRecord(BaseModel):
+    """Persistence record for the chunk_blocks join table."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    block_id: str
+    seq_in_chunk: int
