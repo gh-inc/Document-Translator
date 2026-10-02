@@ -4,6 +4,11 @@ Ticket source of truth for commit messages (see
 [CONTRIBUTING.md](./CONTRIBUTING.md)). Prefix: **DT**. Numbers are
 sequential and never reused, even if a task is cancelled.
 
+The assessment brief lives at
+[docs/assessment_context/TEST_TASK.md](docs/assessment_context/TEST_TASK.md);
+the staged delivery roadmap is at
+[docs/assessment_context/roadmap.md](docs/assessment_context/roadmap.md).
+
 ## How agents use this file
 
 1. Pick the next `todo` task — or, before starting a stage, decompose it
