@@ -545,6 +545,31 @@ they add zero infrastructure overhead, but they are not resilient to process
 kill. The `retry-triage` endpoint is the chosen mitigation; a durable triage
 queue owned by the worker is listed in `DECISIONS.md` as a future improvement.
 
+### 2026-10-02 — Stage 7 MCP plan corrections
+
+**User review:** the initial Stage 7 plan proposed using an HTTPX client to call
+the application's own FastAPI service. The user rejected that approach to
+preserve the requirement that REST and MCP are two front doors to the same core.
+
+**Approved corrections:**
+
+1. **Direct core composition.** MCP tools call `DocumentService`, `JobService`,
+   `TriageService`, repository ports, and `FileStorage` directly. No HTTPX
+   client to the local FastAPI service and no SQL in MCP tools.
+2. **Shared-directory sandbox.** The MCP container receives a dedicated host
+   directory mount for input/output. Every path is resolved and checked for
+   containment (including symlinks); arbitrary host paths are inaccessible.
+3. **Recent-jobs contract.** Add `JobService.list_recent_jobs(limit)` and expose
+   it through `GET /api/jobs?limit=10`, backed by the same service query.
+4. **Local triage polling.** `translate_file` waits on document status through
+   `DocumentRepository` (or `DocumentService`), using short-lived connections,
+   until `EXTRACTED`/`FAILED`; it then creates the job through `JobService`.
+   No REST endpoints are polled.
+
+**Result:** the revised plan is in
+`docs/plans/2026-10-02-stage-7-mcp-server.md`; the matching trade-offs are
+recorded in `DECISIONS.md` §8.
+
 ### Stage 7 MCP execution (2026-10-02)
 
 User approved the Stage 7 plan, secure shared-path resolver, atomic triage claims

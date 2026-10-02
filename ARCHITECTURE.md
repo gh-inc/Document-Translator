@@ -453,6 +453,7 @@ these terms; it is one of the brief's explicit questions.
 | `POST /api/documents` | multipart upload → analyzing document + block count |
 | `POST /api/documents/{id}/retry-triage` | explicitly recover stuck or degraded triage |
 | `POST /api/jobs` | `{document_id, target_languages[], idempotency_key}` → batch of jobs |
+| `GET /api/jobs?limit=10` | recent jobs, newest first (limit bounded by the service) |
 | `GET /api/jobs/{id}` | status, progress, cost, structured error |
 | `POST /api/jobs/{id}/retry` | re-queue failed chunks (optional raised cost cap) |
 | `GET /api/jobs/{id}/events` | SSE progress stream |
@@ -510,6 +511,15 @@ FastMCP, streamable-http, `:8001`. Tool surface designed for editor workflow —
 README ships the exact Claude Code config
 (`claude mcp add --transport http stark-translate http://localhost:8001/mcp`)
 and a three-step verification recipe.
+
+MCP tools call the same core services and ports as REST directly; they do not
+call FastAPI over HTTP and contain no SQL or duplicated business rules. The
+container reads input files and writes downloaded results only under a
+dedicated host directory mounted at `/mcp-files`; supplied paths are resolved
+and checked for containment, including symlinks. `translate_file` polls the
+document repository for triage completion before creating jobs. Recent-job
+listing is provided by `JobService.list_recent_jobs(limit)` and the REST query
+route above.
 
 Stage 7 implements the four tools with explicit Pydantic success/error results.
 Polling is bounded by `MCP_TRIAGE_TIMEOUT_SECONDS` (default and maximum 45s),

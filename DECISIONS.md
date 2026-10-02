@@ -286,11 +286,50 @@ files have fixed metadata and reproduce byte-for-byte in tests.
    up/downloads; the renderer fetches its canvas object) is the
    prerequisite for horizontal worker scaling across physical nodes — the
    stated ceiling of the current single-worker, single-volume design.
-2. **Multi-worker queue semantics** (a real broker with visibility timeouts),
-   unblocked by (1).
-3. **OCR fallback** for scanned PDFs (vision model or Tesseract) behind the
+3. **Multi-worker queue semantics** (a real broker with visibility timeouts),
+   unblocked by (2).
+4. **OCR fallback** for scanned PDFs (vision model or Tesseract) behind the
    same Block abstraction — `scanned_pdf` stops being a rejection.
-4. **Glossary override UI** on top of the persisted TranslationPlan.
-5. **Sequential polish pass** using translated context for long-range style
+5. **Glossary override UI** on top of the persisted TranslationPlan.
+6. **Sequential polish pass** using translated context for long-range style
    coherence (the rejected §6 mechanism, reintroduced as an optional
    post-pass where serialization is acceptable).
+
+---
+
+## 8. Decision record: MCP adapter and filesystem boundary
+
+**Context.** The MCP server and REST API are two front doors to one core. MCP
+must reuse the established service behavior, expose the approved editor
+workflow tools, and handle files even though it runs in a separate container.
+
+**Evaluated alternatives.**
+
+1. **MCP calls the local FastAPI server over HTTP.**
+   - *Pros:* Reuses REST endpoints and avoids constructing services in MCP.
+   - *Cons:* Adds a loopback/network dependency between components in the same
+     application, duplicates HTTP error and retry handling, and does not solve
+     the host-file-path visibility problem for a containerized MCP server.
+2. **MCP composes the same core services and ports directly — CHOSEN.**
+   - *Pros:* Both front doors use the same application logic without a network
+     hop; MCP remains thin and does not contain business rules or SQL.
+   - *Cons:* MCP needs its own dependency composition and active-connection
+     lifecycle, which must remain consistent with the API composition.
+
+**File access boundary.** An HTTP MCP container cannot read arbitrary paths on
+the client host. MCP input and output therefore use a dedicated host directory
+mounted into the container. Tools resolve every path and verify it remains
+within that mount, including symlink resolution; mounting the whole host
+filesystem is rejected.
+
+**Recent-job lookup.** The approved MCP `list_recent_jobs` tool is backed by
+`JobService.list_recent_jobs(limit)`. REST exposes the same service operation at
+`GET /api/jobs?limit=10`; query parameter routing avoids creating a separate
+`/recent` route and keeps business logic in the core service.
+
+**Triage readiness.** `translate_file` polls document status through
+`DocumentRepository` until analysis completes, then calls `JobService` to
+create jobs. It does not poll REST endpoints. Each poll uses a short-lived DB
+connection, and no transaction is held during triage network calls or polling
+sleeps. A bounded deadline returns a retryable result containing the document
+ID so a later invocation can resume.

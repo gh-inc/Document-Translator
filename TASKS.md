@@ -74,12 +74,12 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-38 | 6 | Implement background triage, degraded fallback and retry coordination | done | df79429 |
 | DT-39 | 6 | Wire upload scheduling and enforce job analysis readiness | done | df79429 |
 | DT-40 | 6 | Verify triage integration, review, document and deliver | done | df79429 |
-| DT-41 | 7 | Add shared-directory settings and path containment | done | pending delivery commit |
-| DT-42 | 7 | Add recent-job query and REST collection route | done | pending delivery commit |
-| DT-43 | 7 | Compose MCP runtime and streamable HTTP lifecycle | done | pending delivery commit |
-| DT-44 | 7 | Implement bounded submission and atomic cross-process triage | done | pending delivery commit |
-| DT-45 | 7 | Add job tools and protocol/worker end-to-end tests | done | pending delivery commit |
-| DT-46 | 7 | Document, review, verify and deliver Stage 7 | done | pending delivery commit |
+| DT-41 | 7 | Add shared-directory settings and path containment | done | efcc377 |
+| DT-42 | 7 | Add recent-job query and REST collection route | done | efcc377 |
+| DT-43 | 7 | Compose MCP runtime and streamable HTTP lifecycle | done | efcc377 |
+| DT-44 | 7 | Implement bounded submission and atomic cross-process triage | done | efcc377 |
+| DT-45 | 7 | Add job tools and protocol/worker end-to-end tests | done | efcc377 |
+| DT-46 | 7 | Document, review, verify and deliver Stage 7 | done | efcc377 |
 
 ### Stage 7 execution decomposition (2026-10-02)
 
