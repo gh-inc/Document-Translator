@@ -1,4 +1,4 @@
-"""Thin REST endpoint for document uploads."""
+"""Thin REST endpoints for document uploads and status."""
 
 from __future__ import annotations
 
@@ -15,6 +15,22 @@ from app.core.services.document_service import MAX_UPLOAD_BYTES, DocumentService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 _UPLOAD_READ_SIZE = 64 * 1024
+
+
+@router.get("/{document_id}", response_model=DocumentUploadResponse)
+async def get_document(
+    document_id: str,
+    document_service: Annotated[DocumentService, Depends(get_document_service)],
+) -> DocumentUploadResponse:
+    """Read persisted document readiness without scheduling analysis."""
+    document, block_count = await document_service.get_document(document_id)
+    return DocumentUploadResponse(
+        id=document.id,
+        filename=document.filename,
+        format=document.format,
+        status=document.status,
+        block_count=block_count,
+    )
 
 
 @router.post("", response_model=DocumentUploadResponse)

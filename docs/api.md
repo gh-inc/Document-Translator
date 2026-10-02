@@ -13,8 +13,15 @@ connection; streaming requests retain their connection until the stream ends.
    Limits are 50 MiB for uploads, 400 PDF pages and 10 MiB of extracted UTF-8 text. The response includes the document ID and block count.
    Filenames are sanitized; suffix and signature must agree. Failed ingestion
    rolls back database records and removes the saved upload.
-2. Send the document ID, target languages and a client-selected idempotency key
-   to `POST /api/jobs`:
+2. Poll `GET /api/documents/{id}` from the client until `status=extracted`.
+   This read returns the existing upload response shape: `id`, `filename`,
+   `format`, `status`, and the persisted `block_count`. It reports `analyzing`
+   while triage is pending and `failed` if document processing failed. Stop
+   readiness polling on `failed`; unknown IDs return the catalogued 404
+   `{error_code, message, retryable}` envelope. The endpoint does not start
+   triage or wait for it to finish.
+3. Once extracted, send the document ID, target languages and a client-selected
+   idempotency key to `POST /api/jobs`:
 
    ```json
    {"document_id": "<document-id>", "target_languages": ["de", "fr"], "idempotency_key": "request-1"}
@@ -24,11 +31,11 @@ connection; streaming requests retain their connection until the stream ends.
    the request returns the same persisted jobs. A conflicting reuse of the key
    returns 409. Job creation groups whole blocks into about 1000-token chunks;
    a single larger block occupies its own chunk. Each job aggregate is atomic.
-3. Poll `GET /api/jobs/{id}` or connect to `GET /api/jobs/{id}/events`.
+4. Poll `GET /api/jobs/{id}` or connect to `GET /api/jobs/{id}/events`.
    SSE uses the existing `ServerSentEvent` JSON contract, polls once per second,
    stops at terminal status and checks for client disconnects every iteration.
    `GET /api/batches/{id}` returns the batch's jobs.
-4. Download via `GET /api/jobs/{id}/download` when status is `done` or
+5. Download via `GET /api/jobs/{id}/download` when status is `done` or
    `completed_with_errors`. The latter may contain original text for blocks
    whose translation failed. Other states return 409.
 
@@ -42,8 +49,8 @@ retries disabled. Exhausted attempts publish a heuristic plan with
 `triage_status=degraded`, an uncertainty warning, and `status=extracted`.
 
 `POST /api/jobs` returns `409 analysis_pending` with `retryable=true` until the
-document is extracted and an analysis exists. Retry that request shortly;
-there is no document polling endpoint in the approved REST surface. Successful
+document is extracted and an analysis exists. Clients poll the document status
+endpoint for readiness before submitting jobs. Successful
 analysis terms become identity glossary entries until translated terminology
 is available. A repeated upload with identical bytes returns the original
 document ID and analysis, even with a different filename. IDs for new uploads

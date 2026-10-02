@@ -589,3 +589,68 @@ existing successful plan. Shared upload ownership protects duplicate-content
 artifacts from a losing ingestion cleanup. Timeout recovery uses the returned
 document ID with check_status, followed by idempotent resubmission when extracted.
 All project LLM checks remain offline using fake providers.
+
+### 2026-10-02 — Stage 8 frontend plan corrections
+
+**User review:** the initial Stage 8 plan polled `POST /api/jobs` for
+`409 analysis_pending` and left branding unresolved. Both were rejected.
+
+**Approved corrections:**
+
+1. **Stop POST polling.** Polling `POST /api/jobs` to detect readiness is an
+   antipattern. Add `GET /api/documents/{id}` to `app/api/routers/documents.py`,
+   backed by a `DocumentService` read operation. The frontend polls document
+   status and issues exactly one `POST /api/jobs` after status becomes
+   `extracted`.
+2. **Safe SPA fallback.** The `index.html` catch-all in `app/api/main.py` must
+   be registered strictly last, after every API router, and must exclude
+   `/api` and `/api/...` so a mistyped API path returns a structured JSON 404
+   instead of the React shell.
+3. **Two dev terminals approved.** `make dev` stays for FastAPI; a new
+   `make frontend-dev` runs Vite. The README documents the two-terminal flow.
+4. **Branding source fixed to `starkfuture.com`.** A first draft would have
+   resolved branding from `getstark.co`, which is a different company with an
+   unrelated teal/purple palette. Verified values from the official production
+   CSS: Stark red `#FF1717`, black `#000000`, dark neutrals `#242424` and
+   `#1E1E1E`. No official semantic "secondary" token exists, so `#242424` is
+   recorded as an application surface alias rather than an official brand
+   color. The wordmark SVG is downloaded into the repository; remote asset
+   hotlinking is forbidden.
+
+**Result:** the revised plan is in `docs/plans/2026-10-02-stage-8-frontend.md`;
+the branding and fallback decisions are recorded in `DECISIONS.md` §9.
+
+### 2026-10-02 — Stage 8 frontend execution
+
+The user approved Stage 8 and requested orchestration, delegation, implementation,
+verification, and commits. Additional requirements: React 18 SSE cleanup;
+FastAPI custom 404 SPA fallback protecting API JSON; client MIME checks.
+
+Root decomposed DT-47–DT-57 and delegated scoped scaffold, typed client,
+document-status service/router, upload/readiness, job/SSE, History, branding,
+static serving, and workflow docs. Separate reviewers checked specification
+and quality after each task. A QA agent prepared a real Chromium acceptance
+script; root owns its execution, full checks, integration review, and delivery.
+See [Stage 8 execution record](docs/plans/2026-10-02-stage-8-frontend-execution.md).
+
+Rejected/corrected output: initial vulnerable Router/Vitest selections were
+updated while retaining React 18/Tailwind 3; a retry left History filters on old
+snapshots, fixed with card-to-list status synchronization; static fallback
+reserved assets but missed extensionless branding resources, fixed with explicit
+branding namespace protection. Browser acceptance then caught real dotted batch
+IDs being misclassified as file paths on refresh; exact detail routes now keep
+SPA fallback, covered with the actual ID shape. Review and regression tests
+verified these corrections.
+Root downloaded the official wordmark locally and recolored only path fills.
+Readiness uses bounded GET polling and a stable key for explicit job retries;
+SSE uses abort/revision/connection guards and closes on cleanup/terminal state.
+The existing failed document shape has no diagnostics, so recovery text stays
+safe and generic rather than inventing fields. All LLM validation uses fake
+providers. Existing user changes outside Stage 8 are preserved.
+
+Final integration review used the actual production bundle in Chromium with
+an eight-language queued batch and reproduced the HTTP/1.1 connection limit:
+six unbounded EventSources stalled ordinary GETs. The fix coordinates four
+streams per application page, with cancellable GET polling and slot promotion
+for other active jobs, preserving the existing public endpoints. Focused
+capacity tests and browser evidence are included in the delivery record.

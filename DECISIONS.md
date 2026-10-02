@@ -333,3 +333,39 @@ create jobs. It does not poll REST endpoints. Each poll uses a short-lived DB
 connection, and no transaction is held during triage network calls or polling
 sleeps. A bounded deadline returns a retryable result containing the document
 ID so a later invocation can resume.
+
+---
+
+## 9. Decision record: frontend branding source and SPA fallback
+
+**Context.** The brief requires the web interface to be branded for Stark and
+served by the application. Two distinct companies use the Stark name, and the
+architecture previously referenced `getstark.co`, an accessibility-software
+brand whose palette is teal, purple, bone, and yellow.
+
+**Branding source.**
+
+1. **`getstark.co` palette — rejected.** Wrong company. Its brand colors do not
+   match the red/black identity the user approved, and reusing another
+   company's marks and palette would misrepresent the brand.
+2. **`starkfuture.com` identity — CHOSEN.** Verified from the site's production
+   CSS and assets:
+   - Stark red: `#FF1717` (`.color-stark-red`).
+   - Black: `#000000` (`--black-100`, header background).
+   - Supporting dark neutrals: `#242424` and `#1E1E1E`.
+   The site exposes no official semantic "secondary" token; `#242424` is used as
+   the application's secondary surface alias, and that distinction is stated
+   rather than implied.
+
+**Asset policy.** The wordmark SVG is downloaded into the repository and served
+locally. Runtime hotlinking of remote images, fonts, or stylesheet assets is
+rejected: it makes the UI depend on third-party availability and would break
+offline operation.
+
+**SPA fallback safety.** The approved execution refinement uses a custom 404
+exception handler after API router registration. `/api` and `/api/...` always
+keep the structured `{error_code, message, retryable}` JSON 404 envelope.
+GET/HEAD browser navigation falls back to the local `index.html`; missing
+static resources and non-navigation methods remain 404. Existing files are
+served only from the contained frontend build. This replaces the original
+catch-all proposal and keeps API typos from becoming HTML responses.

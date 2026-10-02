@@ -26,7 +26,7 @@ UploadContext = Callable[[str], AbstractAsyncContextManager[object]]
 
 
 class DocumentService:
-    """Save, extract, and atomically register an uploaded document."""
+    """Save, extract, register, and read persisted documents."""
 
     def __init__(
         self,
@@ -49,6 +49,14 @@ class DocumentService:
         self._upload_lock = upload_lock or asyncio.Lock()
         self._analysis_in_use = analysis_in_use
         self._upload_context = upload_context
+
+    async def get_document(self, document_id: str) -> tuple[DocumentRecord, int]:
+        """Return the current document record and its persisted block count."""
+        document = await self._document_repo.get_document(document_id)
+        if document is None:
+            raise ServiceError(ErrorCode.NOT_FOUND, status_code=404)
+        blocks = await self._document_repo.get_blocks(document_id)
+        return document, len(blocks)
 
     async def upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
         """Validate and persist one upload; return its record and extracted block count."""

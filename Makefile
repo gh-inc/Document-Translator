@@ -1,4 +1,4 @@
-.PHONY: setup dev test test-live lint format typecheck up down build logs
+.PHONY: setup dev frontend-dev test test-live lint format typecheck up down build logs
 
 setup:
 	uv sync
@@ -6,6 +6,9 @@ setup:
 
 dev:
 	uv run uvicorn app.api.main:app --reload --port 8000
+
+frontend-dev:
+	npm --prefix frontend run dev
 
 test:
 	uv run pytest -m "not live"

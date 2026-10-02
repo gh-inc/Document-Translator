@@ -1,0 +1,21 @@
+@import './styles/theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply m-0 bg-stark-black text-white antialiased;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  h1 {
+    @apply text-3xl font-bold tracking-tight sm:text-4xl;
+  }
+
+  :focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 4px;
+  }
+}

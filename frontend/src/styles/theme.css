@@ -1,0 +1,85 @@
+/* All brand assets and typography are local. No remote fonts or styles. */
+:root {
+  color-scheme: dark;
+  --brand-primary: #ff1717;
+  --brand-secondary: #242424;
+  --brand-background: #000000;
+  --brand-surface: #1e1e1e;
+}
+
+* { box-sizing: border-box; }
+body { min-width: 0; }
+button, input, select { font: inherit; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button, select { min-height: 44px; }
+button { line-height: 1.5; }
+button:disabled, input:disabled { cursor: not-allowed; }
+input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--brand-primary); flex-shrink: 0; }
+input[type='file'] { width: 100%; font-size: 0.875rem; color: #d4d4d4; }
+input[type='file']::file-selector-button {
+  margin-right: 0.75rem;
+  border: 1px solid #737373;
+  border-radius: 4px;
+  padding: 0.65rem 0.85rem;
+  background: var(--brand-secondary);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.app-shell { min-height: 100dvh; display: flex; flex-direction: column; }
+.app-header { border-bottom: 1px solid #333333; }
+.header-content {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+.brand-link { display: inline-flex; flex-direction: column; gap: 0.75rem; }
+.brand-link img { display: block; width: 190px; height: 36px; object-fit: contain; object-position: left; }
+.brand-caption { color: #bdbdbd; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.main-navigation { display: flex; gap: 0.5rem; }
+.navigation-link { padding: 0.75rem 1rem; border-bottom: 2px solid transparent; color: #bdbdbd; }
+.navigation-link:hover { color: #ffffff; background: var(--brand-surface); }
+.navigation-link[aria-current='page'] { color: #ffffff; border-bottom-color: var(--brand-primary); background: var(--brand-surface); }
+.main-content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 3rem 1.5rem 4rem; flex: 1; }
+.main-content section, .main-content article, .main-content li, .main-content fieldset { min-width: 0; }
+.main-content p, .main-content h1, .main-content h2 { overflow-wrap: anywhere; }
+.app-footer { border-top: 1px solid #333333; padding: 1.5rem; color: #a3a3a3; text-align: center; font-size: 0.75rem; }
+.skip-link { position: absolute; left: 1rem; top: 1rem; z-index: 10; padding: 0.75rem 1rem; background: white; color: black; transform: translateY(-200%); }
+.skip-link:focus { transform: translateY(0); }
+
+.upload-panel { padding: 1.5rem; background: var(--brand-surface); border: 1px solid #404040; border-radius: 8px; }
+.upload-dropzone { padding: 2rem; background: #141414; border-radius: 6px; }
+.language-choice { min-height: 44px; border-radius: 4px; padding: 0.5rem; font-size: 0.875rem; cursor: pointer; }
+.language-choice:hover { background: var(--brand-secondary); }
+.language-choice:has(:checked) { background: var(--brand-secondary); }
+.button-primary { color: #000000; background: var(--brand-primary); font-weight: 700; }
+.button-primary:hover:enabled { background: #ff5050; }
+.button-secondary { border: 1px solid #737373; border-radius: 4px; padding: 0.6rem 1rem; font-weight: 600; color: #ffffff; background: var(--brand-secondary); }
+.button-secondary:hover:enabled { background: #363636; border-color: #ffffff; }
+.job-card { padding: 1.5rem; border-radius: 8px; }
+.job-card progress { display: block; height: 8px; border: 0; border-radius: 999px; overflow: hidden; background: #444444; }
+.job-card progress::-webkit-progress-bar { background: #444444; border-radius: 999px; }
+.job-card progress::-webkit-progress-value { background: var(--brand-primary); border-radius: 999px; }
+.job-card progress::-moz-progress-bar { background: var(--brand-primary); border-radius: 999px; }
+.detail-link { color: #ffffff; text-decoration: underline; text-underline-offset: 4px; min-height: 44px; display: inline-flex; align-items: center; }
+.detail-link:hover { color: #d4d4d4; }
+
+@media (max-width: 480px) {
+  .header-content { padding: 1.25rem; gap: 1.25rem; }
+  .main-navigation { width: 100%; }
+  .navigation-link { flex: 1; text-align: center; }
+  .main-content { padding: 2rem 1.25rem 3rem; }
+  .upload-panel { padding: 1rem; }
+  .upload-dropzone { padding: 1.25rem; }
+  .job-card { padding: 1.25rem; }
+  .button-primary { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

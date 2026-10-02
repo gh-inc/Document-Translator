@@ -31,6 +31,62 @@ the API key through application Settings; `.env.example` lists placeholders.
 Environment variables must be exported; application Settings do not automatically
 load `.env`. Docker/Compose delivery is scheduled for Stage 9.
 
+## Frontend development
+
+Use Node.js 24 or newer and npm alongside Python 3.12 and `uv`. Install the
+locked frontend dependencies from the repository root:
+
+```bash
+npm --prefix frontend ci
+```
+
+Export the database/storage/provider settings from the offline quickstart in
+each backend process's terminal. Start the two web development servers:
+
+```bash
+# Terminal 1: FastAPI
+make dev
+```
+
+```bash
+# Terminal 2: Vite
+make frontend-dev
+```
+
+Open the URL printed by Vite (normally `http://localhost:5173`). Vite proxies
+`/api` requests, including progress streams, to FastAPI on port 8000; browser
+requests use the Vite origin, so no CORS configuration is needed. Translation
+also requires a separate worker process: in another terminal, export the same
+database/storage/provider settings and run `uv run python -m app.worker`.
+The MCP server is optional for browser use. With `LLM_PROVIDER=fake`, this
+workflow runs offline.
+
+Upload a PDF or DOCX and select target languages. The UI waits for analysis by
+polling `GET /api/documents/{id}`; once the document is `extracted`, it submits
+one `POST /api/jobs` request. Readiness polling stops after 60 seconds and offers
+**Retry analysis**, which calls `POST /api/documents/{id}/retry-triage` before
+checking readiness again. **Cancel** stops the browser's current submission and
+polling; it does not cancel persisted backend work. Job and history views show
+progress, cost, downloads and **Retry translation** for failed or partial jobs.
+
+## Serve a production frontend build
+
+From the repository root:
+
+```bash
+npm --prefix frontend run build
+make dev
+```
+
+The build writes `frontend/dist`. FastAPI serves it at `http://localhost:8000`,
+including SPA navigation such as `/history`; the same origin serves `/api`,
+so no CORS configuration is needed. Its custom 404 handler keeps unknown
+`/api` routes as structured JSON errors instead of returning the SPA HTML.
+`make dev` uses the local reload server to verify the production build; the
+worker remains required with the same database/storage/provider settings.
+Container deployment and the Compose-based `make up` delivery check remain
+scheduled for Stage 9.
+
 ## Connect an editor
 
 For Claude Code:
@@ -120,6 +176,9 @@ this deployment targets Linux with local SQLite WAL storage.
 make test
 make lint
 make typecheck
+npm --prefix frontend test
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
 ```
 
 Offline tests use fake providers, real temporary WAL databases, FastMCP's

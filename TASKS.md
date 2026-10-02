@@ -21,14 +21,13 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 0. Repository conventions & docs
 1. Persistence layer (schema.sql, repositories, WAL pragmas)
 2. LLM port + FakeProvider + OpenAIProvider
-3. Format adapter: PDF (extractor + renderer)
+3. Format adapters: PDF and DOCX (extractor + renderer)
 4. Worker: leases, claim loop, bounded-parallel executor, retry/backoff
 5. REST API + SSE
-6. Format adapter: DOCX (proves the format port)
-7. Triage agent (openai-agents SDK) + degraded fallback
-8. MCP server
-9. Frontend (React, Stark branding)
-10. Chaos script + measurements for DECISIONS.md
+6. Triage agent (openai-agents SDK) + degraded fallback
+7. MCP server
+8. Frontend (React, Stark Future branding)
+9. Compose delivery, chaos script, and remaining acceptance measurements
 
 ## Tasks
 
@@ -80,6 +79,18 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-44 | 7 | Implement bounded submission and atomic cross-process triage | done | efcc377 |
 | DT-45 | 7 | Add job tools and protocol/worker end-to-end tests | done | efcc377 |
 | DT-46 | 7 | Document, review, verify and deliver Stage 7 | done | efcc377 |
+
+| DT-47 | 8 | Scaffold React TypeScript Vite frontend | done | — |
+| DT-48 | 8 | Add typed API client and safe error mapping | done | — |
+| DT-49 | 8 | Expose document readiness through service and REST | done | — |
+| DT-50 | 8 | Implement validated upload and readiness submission | done | — |
+| DT-51 | 8 | Implement batch job SSE retry and download views | done | — |
+| DT-52 | 8 | Implement recent job history and filters | done | — |
+| DT-53 | 8 | Apply local Stark branding and accessible layout | done | — |
+| DT-54 | 8 | Serve frontend with API-safe 404 SPA fallback | done | — |
+| DT-55 | 8 | Document two-terminal frontend workflow | done | — |
+| DT-56 | 8 | Verify Stage 8 integration and acceptance | done | — |
+| DT-57 | 8 | Review and deliver Stage 8 with commit records | done | — |
 
 ### Stage 7 execution decomposition (2026-10-02)
 
@@ -288,3 +299,21 @@ Implementation and independent review are complete. Acceptance checks:
 (17 source files). Real threaded I/O tests ran outside the tool sandbox.
 The existing two Pydantic warnings for approved `register` fields remain.
 See the stage plan and PROMPTS.md for review findings and operating assumptions.
+
+### Stage 8 execution decomposition (completed 2026-10-03)
+
+DT-47–DT-57 implement the approved frontend plan with scoped delegation and
+independent specification/quality reviews. Root owns integration, browser
+acceptance, docs, and delivery. User refinements authorize the document status
+contract, MIME checks, Strict Mode cleanup, and custom 404 SPA handler.
+
+All reviews passed. Final review's aggregate HTTP/1.1 SSE starvation finding
+was corrected with four shared streams and cancellable GET polling for excess
+active jobs; scoped re-review confirmed closure without new major regressions.
+The existing checkout remains on `stage-8-frontend`, preserving unrelated user
+files. No public schema changes beyond the approved plan; Compose stays Stage 9.
+
+Acceptance: 476 backend tests and 66 frontend tests passed; lint, backend and
+frontend typecheck, production build, 16 real-browser PDF/DOCX checks, and five
+eight-job HTTP/1.1 capacity checks passed. Fake providers only. Detailed decisions
+and evidence: [Stage 8 execution record](docs/plans/2026-10-02-stage-8-frontend-execution.md).

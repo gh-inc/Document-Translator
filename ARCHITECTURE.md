@@ -451,6 +451,7 @@ these terms; it is one of the brief's explicit questions.
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/documents` | multipart upload → analyzing document + block count |
+| `GET /api/documents/{id}` | document readiness: `analyzing` / `extracted` / `failed` + block count |
 | `POST /api/documents/{id}/retry-triage` | explicitly recover stuck or degraded triage |
 | `POST /api/jobs` | `{document_id, target_languages[], idempotency_key}` → batch of jobs |
 | `GET /api/jobs?limit=10` | recent jobs, newest first (limit bounded by the service) |
@@ -538,12 +539,17 @@ releases claimed triage work during shutdown. `python -m app.mcp_server` serves
 
 ## 10. Frontend
 
-React + Vite + TS + Tailwind, branded for **Stark** (colors/logo lifted from
-getstark.co at implementation time). Three views:
+React + Vite + TS + Tailwind, branded for **Stark** using the
+starkfuture.com identity: primary `#FF1717`, background `#000000`, dark
+surfaces `#1E1E1E` / `#242424`. The wordmark is committed as a local SVG and
+colours are hardcoded theme tokens; remote asset hotlinking is rejected
+(DECISIONS.md §9). Three views:
 
 1. **Upload** — drag-n-drop, client-side pre-validation, server errors
    rendered specifically ("This PDF has no text layer (scanned document)",
-   "422 pages exceeds the 400-page limit").
+   "422 pages exceeds the 400-page limit"). After upload the UI polls
+   `GET /api/documents/{id}` and issues one `POST /api/jobs` once the document
+   is `extracted`; it never polls `POST /api/jobs` for readiness.
 2. **Job view** — one card per target language, chunk-level progress bar via
    SSE, live cost counter; `completed_with_errors` renders distinctly
    ("3 of 412 blocks could not be translated — kept in English. Retry.");
@@ -656,8 +662,7 @@ getstark.co at implementation time). Three views:
 
 ## 17. Open questions to resolve during implementation
 
-1. Exact Stark brand palette (fetch getstark.co at build time).
-2. PDF bbox insertion: measure overflow/fallback rate on the sample doc; if
+1. PDF bbox insertion: measure overflow/fallback rate on the sample doc; if
    ugly, flip default rendering to clean-regen and say so (§6.6).
 3. Final default model: run the sample doc through `gpt-4o-mini` and one
    stronger model; keep the cheaper one unless chrF justifies otherwise.
@@ -705,7 +710,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | **Engineering fundamentals — observability** | Structured logs, Prometheus `/metrics`, `/healthz`, `/readyz`, 3 a.m. runbook | §13 |
 | **Product judgment — quality metric** | Back-translation chrF reported as an honest proxy; reference-based FLORES-style metric and number/placeholder preservation are *deferred* | §1.3, §14 |
 | **AI leverage** | `PROMPTS.md` logs delegation, rejection, and correction | §16 |
-| **UX — Stark branding** | React UI branded from getstark.co | §10 |
+| **UX — Stark branding** | React UI using the verified starkfuture.com palette and a local wordmark SVG | §10 |
 | **UX — clear feedback during translation** | SSE progress stream, live cost, explicit error states | §8, §10 |
 
 ### 18.3 Deferred or rejected items
