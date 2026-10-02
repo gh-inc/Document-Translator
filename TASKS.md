@@ -42,8 +42,8 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-6 | 0 | Implement approved domain models and atomic repository ports | done | 6837492 |
 | DT-7 | 1 | Finalize strict Pydantic core models (1:1 record-to-column) | done | cac742f |
 | DT-8 | 1 | Finalize core repository ports with aggregate create_job_with_chunks | done | ffd8cd5 |
-| DT-9 | 1 | Add SQLite persistence schema with claim-loop indexes | done | |
-| DT-10 | 1 | Integrate approved plans, validate implementation, and record orchestration | in-progress | |
+| DT-9 | 1 | Add SQLite persistence schema with claim-loop indexes | done | 5c9777b |
+| DT-10 | 1 | Integrate approved plans, validate implementation, and record orchestration | done | |
 
 ### Stage 1 execution decomposition (2026-10-02)
 

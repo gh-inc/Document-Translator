@@ -165,3 +165,100 @@ tuple-based `isinstance` checks and reformatted two assertions even though the
 installed project Ruff had passed. The coordinator changed those tests to
 union-based `isinstance` checks and assertions accepted by both formatters.
 All 25 tests and `make lint` passed again; the test commit then passed pre-commit.
+
+### 2026-10-02 — Planning core models, ports, and persistence schema
+
+**User prompt (paraphrased):** Plan implementation for `app/core/models.py`
+(final Pydantic code), `app/core/ports.py` (using the aggregate
+`create_job_with_chunks` method), and `app/adapters/persistence/schema.sql`
+(tables with claim-loop indexes). Put each plan in a separate Markdown file.
+
+**Delegated to AI:** draft the three implementation plans, including final code
+for each artifact, and update the repo-local backlog.
+
+**What the AI proposed:**
+
+1. **Chunk-block membership in the aggregate write.** Two options were offered:
+   - *Option 1:* extend `ChunkRecord` with an optional `block_ids` field so the
+     persistence adapter could derive `chunk_blocks` from the chunk records.
+   - *Option A:* keep `ChunkRecord` strictly 1:1 with the `chunks` table and add
+     an explicit `chunk_blocks: list[ChunkBlockRecord]` parameter to
+     `create_job_with_chunks`.
+2. **Strict Pydantic configuration:** apply `ConfigDict(extra="forbid")` to all
+   core models to reject unknown fields early.
+3. **Persistence schema:** create `app/adapters/persistence/schema.sql` with all
+   tables from `ARCHITECTURE.md` §5 and indexes optimized for the worker claim
+   loop (`idx_jobs_claim`, `idx_chunks_claim`, `idx_chunks_expired`,
+   `idx_block_translations_lookup`).
+
+**Human approval and corrections:**
+
+1. **Rejected Option 1.** `ChunkRecord` must map 1:1 to the `chunks` table
+   columns. `block_ids` must not leak into the record model.
+2. **Adopted Option A.** `JobExecutionRepository.create_job_with_chunks` now
+   takes three parameters:
+   `create_job_with_chunks(job, chunks: list[ChunkRecord],
+   chunk_blocks: list[ChunkBlockRecord]) -> None`. This preserves table-record
+   fidelity while keeping the aggregate transaction boundary explicit in the
+   port contract.
+3. **Approved strictness.** `ConfigDict(extra="forbid")` confirmed for every
+   model.
+4. **Approved schema.** DDL and indexes accepted without changes.
+5. **Language and scope.** Plans were written in English. Only documentation
+   (`docs/plans/...`) and the backlog (`TASKS.md`) were modified; no
+   implementation files were changed.
+
+**Result:** three approved plans created —
+`docs/plans/2026-10-02-core-models.md`,
+`docs/plans/2026-10-02-core-ports.md`, and
+`docs/plans/2026-10-02-persistence-schema.md`. `TASKS.md` updated with
+`DT-7`, `DT-8`, and `DT-9` as Stage 1 todo items for the orchestrator.
+
+### 2026-10-02 — Orchestrated implementation of the three approved Stage 1 plans
+
+**User request:** continue as orchestrator, plan and decompose implementation of
+the three new files in `docs/plans/`, delegate the work, validate it, and create
+separate commits for each task.
+
+**Planning and delegation:** existing DT-7–DT-9 were selected and marked
+in-progress before code changes. DT-10 covers integration, documentation, and
+validation. Three parallel `worker` subagents have disjoint file ownership:
+`models_finalization` owns models and new strict-model tests;
+`ports_finalization` owns ports and their contract tests;
+`persistence_schema` owns the DDL/package and schema tests. DT-8 depends on DT-7's
+new record types; schema/model parity checks also wait for those types. The main
+agent coordinates dependencies, reviews changes, and creates the commits.
+
+**Workflow adaptation:** plans refer to `superpowers:executing-plans`, which is
+not installed in this session. Their approved implementation steps are executed
+with the available collaboration tools. No provider calls are needed.
+
+**Review decisions:** strict model tests construct valid records first and
+assert `extra_forbidden` specifically; the draft JobRecord test omitted required
+nullable fields and could pass for unrelated missing-field errors. The ports
+plan's final code also changes `get_analysis` to return the persisted analysis
+record, which is included although its task prose only names `save_analysis`.
+The approved DDL is preserved; runtime repository methods and startup wiring
+remain later stages. Schema tests configure all four required PRAGMAs on
+file-backed temporary SQLite connections and validate constraints as well as
+table/index definitions.
+
+**Integration review correction:** the first schema rollback test used an
+already occupied `seq_in_chunk` for its missing-block insert, so a uniqueness
+failure could masquerade as the intended foreign-key failure. The coordinator
+requested a distinct sequence and an assertion of the foreign-key error cause.
+The agent also added focused uniqueness tests and proved rollback of a whole
+job/chunks/join-row transaction while preserving previously committed rows.
+
+**Validation:** `make test`: 79 passed (including 20 schema tests);
+`make lint`: clean after formatting the two new test files;
+`make typecheck`: clean, 14 source files. There are two Pydantic warnings for
+the approved `register` fields on `TranslationPlan` and `DocumentAnalysisRecord`;
+field names are preserved. No real LLM calls were made. Concrete persistence
+repositories and application startup PRAGMA wiring are outside these three plans.
+
+**Delivery:** separate implementation commits were created for DT-7 (`cac742f`),
+DT-8 (`ffd8cd5`), and DT-9 (`5c9777b`), each containing its tests and approved
+plan. All commit hooks passed. DT-10 records integration/documentation and task
+hash backfills. The pre-existing untracked `TEST_TASK.md` remains outside this
+stage's commits. No history was amended or rebased.

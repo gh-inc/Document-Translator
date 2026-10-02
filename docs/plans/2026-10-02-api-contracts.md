@@ -4,6 +4,14 @@
 **Status:** Implemented (contract stage), including the approved 2026-10-02 transaction and opaque-metadata corrections.  
 **Based on:** ARCHITECTURE.md: “Layering & the Document IR”, “Data model (SQLite, WAL)”, “LLM provider & the agent question”, “REST API surface”, and “MCP server”; follow-up clarifications.
 
+**Subsequent contract revisions:** this document records the initial contract
+stage. The approved [core models plan](2026-10-02-core-models.md) adds strict
+models and missing persistence records; the [core ports plan](2026-10-02-core-ports.md)
+extends aggregate enqueue with explicit chunk-block join records and returns
+persisted analysis records. The [persistence schema plan](2026-10-02-persistence-schema.md)
+defines the accepted DDL. Their final code supersedes the corresponding initial
+examples below.
+
 ## Decisions
 
 - **Option B:** core models are separate from REST/MCP schemas. The core does not depend on FastAPI.
