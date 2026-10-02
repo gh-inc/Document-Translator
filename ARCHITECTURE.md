@@ -569,3 +569,64 @@ getstark.co at implementation time). Three views:
    stronger model; keep the cheaper one unless chrF justifies otherwise.
 4. Glossary rendering quality: one deterministic completion per language —
    verify term consistency on the sample doc; if poor, revisit.
+
+---
+
+## 18. Requirements traceability
+
+This section maps the assessment brief's hard requirements and evaluation
+criteria to the concrete design decisions in this document. It exists so a
+reviewer can verify that no hard requirement was silently dropped.
+
+### 18.1 Hard requirements from the brief
+
+| Requirement | Design decision | Section |
+|---|---|---|
+| Web interface accepts PDF uploads | FastAPI `POST /api/documents` + React upload view | §8, §10 |
+| Translate content with an LLM | `LLMProvider` port; bulk translation via parallel completions | §7 |
+| Output a translated PDF | Format renderer re-opens the original file as the canvas | §4, §6 |
+| Survive `kill -9` mid-translation | SQLite WAL + chunk leases + chunk-level checkpointing | §1.2, §2, §5.1, §5.2, §12 |
+| Backend language/framework free choice | Python 3.12 + FastAPI | §2 |
+| Real OpenAI API behind an interface; tests avoid it | `LLMProvider` Protocol with `OpenAIProvider` and `FakeProvider`; `@pytest.mark.live` | §7, §12 |
+| OpenAI Agents SDK with tool calling used where it earns its keep | Triage stage only; output persisted as `TranslationPlan` | §7 |
+| MCP server usable from Claude Code / Cursor | FastMCP streamable-http on `:8001`; README ships exact config | §6, §9 |
+| At least two input formats | PDF + DOCX via the Opaque Metadata pattern | §2, §4, §6.6 |
+| Frontend free choice | React + Vite + TypeScript SPA served by FastAPI | §7, §10 |
+| `docker compose up --build` works from a fresh clone | Single Docker image, three processes, shared `/data` volume | §3, §16 |
+| `README.md`: architecture, decisions, testing guide | Required deliverable; includes quickstart, testing guide, 3 a.m. runbook | §16 |
+| `PROMPTS.md`: AI-usage log incl. rejected output | Required deliverable; maintained as work proceeds | §16 |
+| `DECISIONS.md`: cuts, trade-offs, measured cost/p95, 3 more weeks | Required deliverable; measured numbers filled at implementation end | §16 |
+
+### 18.2 Evaluation criteria from the brief
+
+| Criterion | How the design addresses it | Section |
+|---|---|---|
+| **Agency / product judgment** | Explicit target user and three acceptance criteria written by the team | §1.1, §1.2 |
+| **Engineering fundamentals — data model & API** | Document IR, job/chunk/attempt model, REST surface | §4, §5, §8 |
+| **Engineering fundamentals — layering** | `core/` is independent; `api/` and `mcp_server/` are thin doors | §3, §4 |
+| **Engineering fundamentals — concurrency** | Bounded async parallelism (semaphore 8); short DB transactions | §5.2, §6 |
+| **Engineering fundamentals — idempotency & retries** | `idempotency_key`; exactly-once cache; at-least-once invocations measured | §5.1, §11 |
+| **Engineering fundamentals — failure handling** | Failure matrix covering corrupt, scanned, oversized, provider errors, crashes | §11 |
+| **Engineering fundamentals — tests** | Unit, contract, integration, chaos, regression pins | §12 |
+| **Engineering fundamentals — observability** | Structured logs, Prometheus `/metrics`, `/healthz`, `/readyz`, 3 a.m. runbook | §13 |
+| **Product judgment — quality metric** | Back-translation chrF reported as an honest proxy; reference-based FLORES-style metric and number/placeholder preservation are *deferred* | §1.3, §14 |
+| **AI leverage** | `PROMPTS.md` logs delegation, rejection, and correction | §16 |
+| **UX — Stark branding** | React UI branded from getstark.co | §10 |
+| **UX — clear feedback during translation** | SSE progress stream, live cost, explicit error states | §8, §10 |
+
+### 18.3 Deferred or rejected items
+
+The following items from the brief are intentionally not built into the MVP.
+They are either cuts (with rationale in `DECISIONS.md`) or deferred to a
+future quality-metric pass:
+
+- OCR for scanned PDFs — rejected with explicit `scanned_pdf` error.
+- Pixel-perfect PDF layout for complex tables / RTL — scoped down to
+  text-oriented PDFs.
+- Horizontal worker scaling — single worker + bounded concurrency is
+  sufficient for the assessment workload.
+- Side-by-side preview / in-place editing — cut for time.
+- Reference-based FLORES-style chrF and number/placeholder preservation
+  metrics — **deferred**; current plan uses back-translation chrF as a proxy.
+  If time allows, add a reference-based sample set and a preservation metric
+  and report both numbers in `DECISIONS.md`.

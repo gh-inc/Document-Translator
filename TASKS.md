@@ -49,6 +49,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-13 | 1 | Implement document, execution, and cache repositories | done | a261f0c |
 | DT-14 | 1 | Implement async filesystem storage with contained artifact paths | done | 7790553 |
 | DT-15 | 1 | Validate persistence integration and record execution corrections | done | 0758d5e |
+| DT-16 | 0 | Add requirements traceability section to ARCHITECTURE.md | in-progress | |
 
 ### Stage 1 execution decomposition (2026-10-02)
 
