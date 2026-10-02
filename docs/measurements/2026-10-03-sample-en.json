@@ -1,0 +1,129 @@
+{
+  "jobs": [
+    {
+      "attempt_cost_usd": 0.00041715,
+      "attempt_count": 1,
+      "attempt_outcomes": {
+        "ok": 1
+      },
+      "attempt_tokens_in": 801,
+      "attempt_tokens_out": 495,
+      "block_count": 12,
+      "chunk_attempt_latencies_ms": [
+        6645
+      ],
+      "cost_usd": 0.00041715,
+      "created_at": "2026-10-02T21:50:08.199866+00:00",
+      "document_id": "23b434b65b2a43240da6540c811273575ac8c08618eeb0ba036873621eb0aa8d",
+      "done_chunks": 1,
+      "job_id": "0ac96ffe-ddb0-41cf-a4aa-14907a24e42c",
+      "job_latency_ms": 7108,
+      "model": "gpt-4o-mini",
+      "p95_chunk_attempt_latency_ms": 6645,
+      "retry_attempt_count": 0,
+      "retry_cost_share_percent": 0.0,
+      "retry_cost_usd": 0,
+      "status": "done",
+      "tokens_in": 801,
+      "tokens_out": 495,
+      "total_chunks": 1,
+      "updated_at": "2026-10-02T21:50:15.307640+00:00"
+    },
+    {
+      "attempt_cost_usd": 0.00040784999999999997,
+      "attempt_count": 1,
+      "attempt_outcomes": {
+        "ok": 1
+      },
+      "attempt_tokens_in": 823,
+      "attempt_tokens_out": 474,
+      "block_count": 12,
+      "chunk_attempt_latencies_ms": [
+        5153
+      ],
+      "cost_usd": 0.00040784999999999997,
+      "created_at": "2026-10-02T21:50:42.822148+00:00",
+      "document_id": "6897b17137a6f17f2406b11f159d10d8a8baeb675a7571331d6fcdfd873c6ec8",
+      "done_chunks": 1,
+      "job_id": "f72a1721-6953-4a2d-bca5-6776c8fd11dc",
+      "job_latency_ms": 6211,
+      "model": "gpt-4o-mini",
+      "p95_chunk_attempt_latency_ms": 5153,
+      "retry_attempt_count": 0,
+      "retry_cost_share_percent": 0.0,
+      "retry_cost_usd": 0,
+      "status": "done",
+      "tokens_in": 823,
+      "tokens_out": 474,
+      "total_chunks": 1,
+      "updated_at": "2026-10-02T21:50:49.033486+00:00"
+    }
+  ],
+  "measurement": {
+    "date_utc": "2026-10-02",
+    "model": "gpt-4o-mini",
+    "provider": "openai",
+    "sample_filename": "sample_en.pdf",
+    "sample_sha256": "23b434b65b2a43240da6540c811273575ac8c08618eeb0ba036873621eb0aa8d",
+    "source_block_count": 12,
+    "started_at": "2026-10-02T21:49:42.207916+00:00",
+    "target_language": "de"
+  },
+  "measurement_exclusions": [
+    "Triage/provider analysis usage is not persisted in jobs or chunk_attempts and is excluded.",
+    "Chunk latency p95 uses persisted provider-attempt latency_ms rows, including retries.",
+    "Job latency is persisted updated_at minus created_at; one run does not establish a meaningful p95.",
+    "Quality and preservation metrics cover extracted text; DOCX tables and other unsupported text regions are excluded."
+  ],
+  "number_placeholder_preservation": {
+    "currency": {
+      "preservation_percent": null,
+      "preserved_count": 0,
+      "source_count": 0
+    },
+    "date": {
+      "preservation_percent": null,
+      "preserved_count": 0,
+      "source_count": 0
+    },
+    "number": {
+      "preservation_percent": 100.0,
+      "preserved_count": 5,
+      "source_count": 5
+    },
+    "placeholder": {
+      "preservation_percent": null,
+      "preserved_count": 0,
+      "source_count": 0
+    },
+    "preservation_percent": 100.0,
+    "preserved_token_count": 5,
+    "source_token_count": 5
+  },
+  "quality": {
+    "beta": 2,
+    "case_sensitive": true,
+    "character_ngram_orders": "1-6",
+    "effective_order": true,
+    "metric": "chrF",
+    "mode": "back_translation",
+    "order_averaging": "mean precision and recall by effective n-gram order",
+    "scale": "0-100",
+    "score": 85.27060448384107,
+    "whitespace": "excluded"
+  },
+  "usage": {
+    "attempt_cost_usd": 0.000825,
+    "attempt_count": 2,
+    "cost_usd": 0.000825,
+    "job_count": 2,
+    "job_latency_note": "p95 omitted: fewer than 20 comparable job observations; see per-job latency.",
+    "p95_chunk_attempt_latency_ms": 6645,
+    "p95_job_latency_ms": null,
+    "retry_attempt_count": 0,
+    "retry_cost_share_percent": 0.0,
+    "retry_cost_usd": 0.0,
+    "tokens_in": 1624,
+    "tokens_out": 969
+  }
+}

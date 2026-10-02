@@ -107,7 +107,10 @@ never include exception details or persisted diagnostic text.
 
 - `/healthz` returns 200 without dependency access.
 - `/readyz` checks database reachability and writability of upload/output
-  directories. Worker heartbeat freshness is deferred, as specified by Stage 5.
+  directories, and stale `inflight` chunk leases. Lease expiry older than
+  `max(120, 2 * CHUNK_LEASE_SECONDS)` seconds yields catalogued `not_ready`
+  (503). With no inflight chunks, an absent worker cannot be detected.
+  A paused/slow worker can remain not ready until lease recovery.
 - `/metrics` exports job counts per status and known provider cost/error totals
   from durable data. Repeated scrapes do not accumulate totals again.
   `cache_hits_total` is initialized to zero; durable cache-hit instrumentation

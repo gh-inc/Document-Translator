@@ -92,14 +92,14 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-56 | 8 | Verify Stage 8 integration and acceptance | done | 17b079c |
 | DT-57 | 8 | Review and deliver Stage 8 with commit records | done | 17b079c |
 
-| DT-58 | 9 | Deliver non-root multi-stage image and three-process Compose | done | — |
-| DT-59 | 9 | Prove durable restart recovery with Compose chaos script | done | — |
-| DT-60 | 9 | Add stale-chunk worker-aware readiness | done | — |
-| DT-61 | 9 | Implement live quality and cost measurement command | done | — |
+| DT-58 | 9 | Deliver non-root multi-stage image and three-process Compose | done | 52c280d |
+| DT-59 | 9 | Prove durable restart recovery with Compose chaos script | done | 52c280d |
+| DT-60 | 9 | Add stale-chunk worker-aware readiness | done | aa2b9d6 |
+| DT-61 | 9 | Implement live quality and cost measurement command | done | 1969f27 |
 | DT-62 | 9 | Record real measurements or explicit measurement gaps | done | — |
 | DT-63 | 9 | Document operator runbook and offline frontend CI | done | — |
-| DT-64 | 9 | Review Stage 9, verify acceptance and deliver commits | in-progress | — |
-| DT-65 | 9 | Publish MCP downloads readable by the host from non-root containers | done | — |
+| DT-64 | 9 | Review Stage 9, verify acceptance and deliver commits | done | — |
+| DT-65 | 9 | Publish MCP downloads readable by the host from non-root containers | done | d1a4809 |
 
 ### Stage 9 execution decomposition (2026-10-03)
 
@@ -107,6 +107,16 @@ DT-58–DT-64 execute the approved Stage 9 plan. Container/chaos delivery,
 readiness, and measurement tooling have disjoint delegated ownership. Root
 owns integration, documentation, CI, acceptance, independent review and
 commits. Existing user changes are preserved and excluded from delivery.
+DT-65 fixes a host-readability defect found during real Compose MCP downloads.
+
+Stage 9 is implemented and independently reviewed. Final checks: 493 backend
+tests, 66 frontend tests, lint, backend/frontend typecheck and frontend build
+passed. Docker build/import/sqlite3/tokenizer checks passed; REST/MCP acceptance
+and restart chaos passed again from a clean local clone of runtime commit
+`d1a4809`. Chaos recovered 10/10 chunks and 320/320 translations, with no new
+attempts for already-done chunks. Real OpenAI sample measurements and explicit
+unmeasured limits are recorded in DECISIONS.md. Details and review rulings:
+[Stage 9 execution record](docs/plans/2026-10-03-stage-9-execution.md).
 
 
 ### Stage 7 execution decomposition (2026-10-02)

@@ -103,11 +103,11 @@ into every prompt. The model is configurable via `OPENAI_MODEL`, so a
 heavier model can be selected where measured quality justifies the
 additional spend.
 
-**Measured cost.** Final per-document cost, including retried and ambiguous
-provider calls, is recorded per job in `chunk_attempts` and reported in §5.
-Placeholder for the assessment sample document:
-_"The real cost of translating the test document (X pages, Y chunks,
-Z blocks) was $W.WW, including retry attempts."_
+**Measured cost.** Stage 9 measured bulk translation of `samples/sample_en.pdf`
+(2 pages, 12 blocks, 1 chunk) to German at **$0.00041715** with `gpt-4o-mini`.
+The reverse quality-check job adds $0.00040785. These are known recorded bulk
+attempt costs using the adapter's pricing snapshot; triage spend and usage lost
+before checkpointing are excluded. See “Stage 9 live measurements” below.
 
 ---
 
@@ -369,3 +369,46 @@ GET/HEAD browser navigation falls back to the local `index.html`; missing
 static resources and non-navigation methods remain 404. Existing files are
 served only from the contained frontend build. This replaces the original
 catch-all proposal and keeps API typos from becoming HTML responses.
+
+---
+
+## Stage 9 live measurements
+
+Measured on **2026-10-03 Europe/Kyiv** (start **2026-10-02 21:49:42 UTC**)
+with `LLM_PROVIDER=openai`, model `gpt-4o-mini`, and the committed sample
+`samples/sample_en.pdf`: 2 pages, 12 source blocks, one chunk per direction.
+Sample SHA-256: `23b434b65b2a43240da6540c811273575ac8c08618eeb0ba036873621eb0aa8d`.
+The machine-readable [run report](docs/measurements/2026-10-03-sample-en.json)
+contains per-job persisted usage, times, IDs, and metric conventions.
+
+Reproduce with:
+
+```bash
+uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env --timeout 240
+```
+
+| Figure | Observed result | Scope |
+| --- | --- | --- |
+| Forward cost per document, EN→DE | $0.00041715 | 801 input + 495 output tokens, one successful bulk attempt |
+| Back-translation cost, DE→EN | $0.00040785 | 823 input + 474 output tokens, one successful bulk attempt |
+| Combined bulk spend | $0.000825 | Two jobs; output tokens account for $0.0005814 (70.47%) at the adapter pricing snapshot |
+| Recorded bulk retry share | 0% | No bulk retry attempts; triage had retries whose spend is unrecorded |
+| Forward chunk-attempt latency | 6645 ms | One observation; the reported nearest-rank p95 equals this single sample |
+| Reverse chunk-attempt latency | 5153 ms | One observation |
+| Forward / reverse persisted job latency | 7108 / 6211 ms | Enqueue-to-terminal duration; excludes preceding extraction/triage |
+| Population p95 job latency | not measured | Two different-direction jobs cannot establish a useful p95 |
+| Before/after chunk parallelism | not measured | One chunk per job provides no parallelism comparison |
+| Back-translation chrF | 85.2706 / 100 | Case-sensitive chrF β=2, orders 1–6, effective-order means, whitespace excluded |
+| Number/Placeholder Preservation | 100% (5/5) | Forward rendered text, strict literal multiset comparison; all five tokens are numbers |
+| Dates / currency / placeholders | not measured | The fixed sample contains none of these tokens; the command reports null for empty categories |
+| Supplied-reference chrF | not measured | No independent German reference was supplied |
+| Total provider bill per document | not measured | Triage token usage and ambiguous uncheckpointed usage have no durable billing record |
+
+Forward triage completed successfully on its third attempt; reverse triage
+exhausted three attempts and used the documented degraded fallback. The forward
+PDF renderer reported three overflow fallback blocks. The chrF score therefore
+measures this rendered pipeline run with its actual triage/fidelity limits; it
+is a coarse information-preservation proxy, not a translation-quality verdict.
+The output-token cost dominates only the measured bulk spend. No fake-provider
+output is used for any figure in this section. Provider prices may differ from
+the adapter's recorded pricing snapshot.

@@ -654,3 +654,38 @@ six unbounded EventSources stalled ordinary GETs. The fix coordinates four
 streams per application page, with cancellable GET polling and slot promotion
 for other active jobs, preserving the existing public endpoints. Focused
 capacity tests and browser evidence are included in the delivery record.
+
+### 2026-10-03 — Stage 9 implementation and review
+
+The user requested orchestration, delegation, implementation, verification, and
+commits for the approved end-to-end/chaos/observability plan. Root delegated
+container/chaos delivery (DT-58/59), stale-lease readiness (DT-60), and live
+measurement tooling (DT-61) to three agents with disjoint file ownership. Root
+owned integration, CI/runbook, live evidence, acceptance, and delivery.
+
+Corrections during integration: Dockerfile HEALTHCHECK uses Docker `CMD`;
+SQLite ISO lease comparisons in the shell script use `julianday`; already-pending
+chunks may legitimately gain attempts after restart; the durable table cannot
+count an interrupted request whose outcome was never checkpointed. Tokenizer
+files are fetched during image build so fake-provider runtime works offline.
+Measurement polls document readiness after upload's `analyzing` response and
+uses standard per-order chrF precision/recall averaging, verified against the
+primary SacreBLEU implementation. The command supports explicit dotenv loading
+through Settings and ignores legacy/Compose-only keys without printing secrets.
+
+Readiness tests passed; an independent measurement review found no blocking
+issues. The final reviewer raised a missing cost-cap setting, then withdrew
+the finding after checking the current Compose file with `rg`; it already
+passes `MAX_COST_PER_JOB_USD`. Full offline checks and concrete container
+acceptance are recorded in the Stage 9 execution record.
+
+One real OpenAI sample PDF run completed in both directions; raw machine
+evidence is committed under `docs/measurements/`. Reported costs cover bulk
+attempts; triage usage is unrecorded. Forward triage succeeded after retries,
+reverse triage degraded, and those limits are stated beside the actual score.
+Population job p95 and parallelism comparison remain explicitly unmeasured.
+Independent container acceptance discovered a real integration regression:
+MCP returned a completed download owned by container UID 10001 with mode 0600,
+so the host could not open it. DT-65 corrects final publication permissions
+while keeping the temporary copy private and the rename atomic.
+Existing user-authored files/approval notes are preserved outside these commits.

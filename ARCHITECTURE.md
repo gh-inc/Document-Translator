@@ -461,7 +461,7 @@ these terms; it is one of the brief's explicit questions.
 | `GET /api/jobs/{id}/download` | translated file |
 | `GET /api/batches/{id}` | all jobs of a multi-language batch |
 | `GET /healthz` | liveness: process is up |
-| `GET /readyz` | readiness: DB reachable, storage writable, worker heartbeat fresh |
+| `GET /readyz` | readiness: DB reachable, storage writable, no stale inflight chunk leases |
 | `GET /metrics` | Prometheus |
 
 Errors are structured: `{error_code, message, retryable}` — never bare
@@ -491,7 +491,9 @@ Idempotency checks run within aggregate insertion transactions, and partially
 created language batches can be completed by repeating the same request.
 Retries preserve cached work and billed attempts; internal retry budgets survive
 process restarts in the existing diagnostic field while no public error is set.
-Readiness currently checks DB and storage; worker freshness remains deferred.
+Readiness checks DB, writable storage, and stale inflight chunk leases.
+The grace is `max(120, 2 * CHUNK_LEASE_SECONDS)` seconds beyond expiry;
+idle deployments cannot prove worker liveness using this heuristic.
 Metrics derive job counts and known cost/error totals from persistence;
 cache-hit recording remains deferred. See [REST operating notes](docs/api.md).
 
@@ -532,7 +534,8 @@ content/language idempotency keys and return immediately after enqueue.
 Downloads are atomically copied into validated shared output directories.
 FastMCP owns startup/cleanup, initializes WAL before tools are accepted, and
 releases claimed triage work during shutdown. `python -m app.mcp_server` serves
-`0.0.0.0:8001/mcp`; Compose wiring remains Stage 9. Host bind source
+`0.0.0.0:8001/mcp`; Compose shares one `/data` volume across all processes.
+Host bind source
 `MCP_HOST_SHARED_DIR` is separate from the in-container `MCP_SHARED_DIR`.
 
 ---
@@ -589,9 +592,10 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
   file parses and contains every block translated.
 - **Chaos:** start job → cancel worker mid-flight + expire leases → new
   worker → job reaches `done`. Assertions: **no block with a committed
-  translation is ever re-requested from the provider** (FakeProvider counts
-  invocations per block); duplicate spend, if any, is attributable solely to
-  in-flight ambiguous attempts and visible in `chunk_attempts`. Plus
+  translation is ever re-requested from the provider** (the compose script
+  compares persisted attempts for already-done chunks); newly executed pending
+  and interrupted chunks may add attempt rows. Known attempt spend is durable;
+  usage lost before checkpointing is unknown. Plus
   `scripts/chaos-restart.sh` running the same scenario against real compose —
   the reviewers' exact test.
 - **Regression pins:** corrupt file, oversized file, duplicate idempotency
@@ -608,10 +612,18 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
   histogram, `llm_errors_total{code}`, `cache_hits_total`,
   `llm_cost_usd_total`, `llm_cost_retry_share` (spend in attempts after the
   first), `jobs_by_status` gauge, worker heartbeat age.
-- **Health:** `/healthz` (liveness) and `/readyz` (DB, storage, worker
-  heartbeat) — not conflated.
+- **Health:** `/healthz` (liveness) and `/readyz` (DB, storage,
+  stale inflight leases) — not conflated.
 - **Runbook:** README section "3 a.m." — what to look at first, mapped to the
   metrics above.
+
+Stage 9 delivery exports durable job counts and known cost/error totals.
+`cache_hits_total` remains zero without persisted hit instrumentation.
+Latency histograms, error-code labels, retry-share metrics, and direct worker
+heartbeat age are not exported; the measurement command derives available
+latencies/retry spend from `chunk_attempts`. Compose health checks web HTTP
+liveness, worker process liveness, and the MCP transport without adding public
+health endpoints. Readiness cannot detect an absent idle worker.
 
 ---
 
@@ -708,7 +720,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | **Engineering fundamentals — failure handling** | Failure matrix covering corrupt, scanned, oversized, provider errors, crashes | §11 |
 | **Engineering fundamentals — tests** | Unit, contract, integration, chaos, regression pins | §12 |
 | **Engineering fundamentals — observability** | Structured logs, Prometheus `/metrics`, `/healthz`, `/readyz`, 3 a.m. runbook | §13 |
-| **Product judgment — quality metric** | Back-translation chrF reported as an honest proxy; reference-based FLORES-style metric and number/placeholder preservation are *deferred* | §1.3, §14 |
+| **Product judgment — quality metric** | Back-translation chrF reported as an honest proxy; Stage 9 also supports supplied-reference chrF and number/placeholder preservation | §1.3, §14 |
 | **AI leverage** | `PROMPTS.md` logs delegation, rejection, and correction | §16 |
 | **UX — Stark branding** | React UI using the verified starkfuture.com palette and a local wordmark SVG | §10 |
 | **UX — clear feedback during translation** | SSE progress stream, live cost, explicit error states | §8, §10 |
@@ -725,7 +737,7 @@ future quality-metric pass:
 - Horizontal worker scaling — single worker + bounded concurrency is
   sufficient for the assessment workload.
 - Side-by-side preview / in-place editing — cut for time.
-- Reference-based FLORES-style chrF and number/placeholder preservation
-  metrics — **deferred**; current plan uses back-translation chrF as a proxy.
-  If time allows, add a reference-based sample set and a preservation metric
-  and report both numbers in `DECISIONS.md`.
+- A fixed reference corpus for FLORES-style evaluation remains deferred.
+  Stage 9 tooling supports supplied-reference chrF and rendered-text
+  number/placeholder preservation; without a reference, it reports
+  back-translation chrF as a proxy. Live figures require real credentials.

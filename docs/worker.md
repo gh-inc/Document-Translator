@@ -39,11 +39,17 @@ models, repository ports, and database schema are unchanged.
 
 The default provider is `openai`; configure its key through application Settings.
 Use `LLM_PROVIDER=fake` for offline execution. Tests use FakeProvider exclusively.
-This stage supplies execution of pre-enqueued jobs; upload, enqueue, REST, and
-triage services are delivered in later stages. Missing persisted analysis uses
+Compose launches the worker after web liveness succeeds and shares the same
+`/data` volume with REST and MCP. Missing persisted analysis uses
 the worker's degraded source-side plan.
 
 Execution ownership is checked before cache checkpoints and artifact publication.
 Filesystem publication and lease checks cannot be one atomic transaction through
 the existing ports; simultaneous workers during lease loss can still race to
 publish an artifact. Horizontal worker scaling remains outside the project scope.
+
+Worker container health checks PID 1 liveness. Web `/readyz` uses the existing
+chunk lease state: an `inflight` lease expired for longer than
+`max(120, 2 * CHUNK_LEASE_SECONDS)` seconds returns 503. No worker-heartbeat
+table or marker files are used. An idle system cannot detect an absent worker
+through this heuristic. See [Compose/chaos operations](ops.md).

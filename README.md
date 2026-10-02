@@ -6,6 +6,39 @@ services; a separate worker translates and renders the original document.
 See [architecture](ARCHITECTURE.md), [REST usage](docs/api.md),
 [worker operations](docs/worker.md) and [trade-offs](DECISIONS.md).
 
+## Compose quickstart
+
+From a clean clone with Docker and Compose installed:
+
+```bash
+docker compose up --build -d --wait
+curl -fsS http://localhost:8000/healthz
+curl -fsS http://localhost:8000/readyz
+```
+
+Open `http://localhost:8000` to upload a PDF or DOCX; MCP listens on
+`http://localhost:8001/mcp`. The stack defaults to `LLM_PROVIDER=fake` and
+requires no API key. Three non-root processes share one named `/data` volume;
+only the dedicated `MCP_HOST_SHARED_DIR` is bind-mounted for editor files.
+`docker compose down` keeps documents and results; deleting the volume deletes
+those records. `make up`, `make down`, and `make logs` wrap Compose commands.
+
+For live translation copy `.env.example` to `.env`, configure the key, set
+`LLM_PROVIDER=openai`, and recreate the services with `docker compose up -d`.
+Keep `.env` local. The fixed upload limits are enforced by the services, rather
+than configurable `MAX_FILE_SIZE_MB` or `MAX_PAGES` environment variables.
+
+Run the reproducible offline crash check:
+
+```bash
+./scripts/chaos-restart.sh
+```
+
+It creates an isolated Compose project, kills the worker while chunks remain,
+then compares durable SQLite checkpoints after restart. See
+[operator notes](docs/ops.md) for prerequisites, `--keep`, counters and the
+at-least-once boundary for interrupted provider requests.
+
 ## Local offline quickstart
 
 Use Python 3.12 and `uv`. From the repository root:
@@ -29,7 +62,7 @@ For REST, start `make dev` in a third terminal (API docs at
 translations. For real translation choose `LLM_PROVIDER=openai` and configure
 the API key through application Settings; `.env.example` lists placeholders.
 Environment variables must be exported; application Settings do not automatically
-load `.env`. Docker/Compose delivery is scheduled for Stage 9.
+load `.env`. Compose loads `.env` and passes supported settings to every process.
 
 ## Frontend development
 
@@ -84,8 +117,7 @@ so no CORS configuration is needed. Its custom 404 handler keeps unknown
 `/api` routes as structured JSON errors instead of returning the SPA HTML.
 `make dev` uses the local reload server to verify the production build; the
 worker remains required with the same database/storage/provider settings.
-Container deployment and the Compose-based `make up` delivery check remain
-scheduled for Stage 9.
+The container image builds this bundle in its Node stage and serves it from FastAPI.
 
 ## Connect an editor
 
@@ -129,6 +161,12 @@ These configurations follow the official
 
 ## Three-step MCP verification
 
+Before the container verification, create the dedicated directories and grant
+UID 10001 write access to `output/` (or use a local ACL). For example,
+`mkdir -p mcp-files/input mcp-files/output` and `chmod 0777 mcp-files/output`
+permit downloads in that dedicated output directory. Copy the sample into
+`mcp-files/input/`; host input files must be readable by the container.
+
 1. Place `sample_en.pdf` in the shared `input/` directory. Ask the editor to call
    `translate_file` with `path="input/sample_en.pdf"` and
    `target_languages=["de"]`. It returns `document_id`, `batch_id`, `job_ids`.
@@ -158,7 +196,7 @@ The server can access only this configured mount through its tools. Keep
 `input/` and `output/` beneath it. Internal uploads and worker artifacts remain
 in their separate storage directories.
 
-For the later container stack, `MCP_HOST_SHARED_DIR` is the host bind source
+For the container stack, `MCP_HOST_SHARED_DIR` is the host bind source
 (default `./mcp-files`); `MCP_SHARED_DIR=/mcp-files` is the container destination.
 Mount only that dedicated directory. Host paths such as `/home/.../file.pdf`
 will not work inside the container; use `input/file.pdf` or `/mcp-files/input/file.pdf`.
@@ -185,9 +223,61 @@ Offline tests use fake providers, real temporary WAL databases, FastMCP's
 in-memory client and worker-produced PDF/DOCX artifacts. Real OpenAI tests
 require explicit `make test-live` and configured credentials.
 
-If a job remains queued, check that the worker uses the same database settings.
-If triage remains pending after process failure, resubmit through MCP or use
-`POST /api/documents/{id}/retry-triage`. Check `/readyz` for database/storage
-availability and `/metrics` for durable job counts and known costs. Forced
-worker termination waits for persisted leases to expire before recovery;
-committed translations are cached. More details: [worker operations](docs/worker.md).
+## 3 a.m. runbook
+
+Start with `docker compose ps`, `/healthz`, `/readyz`, and `/metrics`:
+
+```bash
+curl -fsS http://localhost:8000/metrics
+docker compose logs --tail=100 worker web mcp
+```
+
+| Symptom | Check | Safe action |
+| --- | --- | --- |
+| Jobs remain queued | `docker compose ps worker`; compare `DATABASE_PATH`, `UPLOAD_STORAGE_PATH`, `OUTPUT_STORAGE_PATH` in your Compose configuration across processes | Start/recreate the worker with `docker compose up -d worker`; use the same `/data` volume. An idle `/readyz` 200 alone does not prove worker liveness. |
+| Jobs remain running | Inspect chunk leases using the SQL below and worker logs; normal job/chunk leases last 60 seconds and heartbeat runs every 10 seconds | Restart a dead worker and allow the outstanding job/chunk leases to expire; committed chunks resume from cache. Avoid editing states directly. |
+| Cost rises | `/metrics` exposes `llm_cost_usd_total`; query attempts by outcome and retry number below | Check retries and `MAX_COST_PER_JOB_USD`; reduce concurrency if rate limited, correct provider failures, and stop accepting new work while investigating. Recorded spend excludes unknown usage and triage calls. |
+| Partial results | Job status `completed_with_errors` means missing translations rendered as source text; inspect `GET /api/jobs/{id}` errors | Resolve the reported cause; `curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8000/api/jobs/<job-id>/retry` requeues only missing work. Download again after completion. |
+| Triage remains analyzing | `GET /api/documents/{id}` and web/MCP logs; analysis tasks run in-process | After a crashed owner, `curl -fsS -X POST http://localhost:8000/api/documents/<document-id>/retry-triage`; successful analysis and analysis already used by jobs remain immutable. |
+
+Read durable diagnostics without changing state:
+
+```bash
+docker compose exec -T web sqlite3 /data/app.db "SELECT job_id,seq,status,lease_expires_at FROM chunks ORDER BY job_id,seq;"
+docker compose exec -T web sqlite3 /data/app.db "SELECT outcome,COUNT(*),SUM(cost_usd) FROM chunk_attempts GROUP BY outcome;"
+docker compose exec -T web sqlite3 /data/app.db "SELECT SUM(cost_usd),SUM(CASE WHEN attempt_no>1 THEN cost_usd ELSE 0 END) FROM chunk_attempts;"
+```
+
+`/healthz` is dependency-free web liveness. `/readyz` checks the database,
+writable storage, and stale `inflight` chunk leases: 503 appears when lease
+expiry is more than `max(120, 2 * CHUNK_LEASE_SECONDS)` seconds in the past.
+An idle deployment reports ready even if the worker is absent; a paused worker
+can temporarily report not ready until it recovers. Worker container health
+checks process liveness; MCP health checks its transport. Neither supplies a
+separate HTTP `/healthz` endpoint.
+
+Metrics currently expose durable job counts and known cost/error totals.
+`cache_hits_total` is zero because hits are not persisted; latency distributions
+and retry spend are obtained from SQLite by the measurement command. Unknown
+usage from a killed or timed-out invocation cannot be reconstructed from a
+missing attempt row. See [operator notes](docs/ops.md) and
+[worker operations](docs/worker.md).
+
+## Live quality and cost measurements
+
+This explicit command uses the real pipeline in isolated temporary storage:
+
+```bash
+uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env
+uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env --reference /path/to/reference.txt
+```
+
+Set `LLM_PROVIDER=openai` in the chosen environment file; specify another target
+with `--target-language fr`. The command rejects a
+fake provider and missing credentials before work starts, emits JSON on stdout
+and a readable table on stderr. Without a reference it labels chrF as
+back-translation, a coarse preservation proxy. Recorded cost comes from bulk
+attempts; triage and unknown transport usage have no durable billing record.
+A single job duration is one observation and cannot establish a population p95
+or a parallelism comparison. Measured results and explicit gaps are recorded in
+[DECISIONS.md](DECISIONS.md).
