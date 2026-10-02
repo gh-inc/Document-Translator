@@ -62,7 +62,56 @@ type system, and one test stack across web, worker, and MCP.
 
 ---
 
-## 2. Decision record: document format handling
+## 2. Decision record: AI provider & cost strategy (model selection)
+
+**Context.** The translation engine must balance quality (preservation of
+whole-document context and glossary terminology) with predictable unit
+economics. The system will process business documents, not literary prose;
+absolute fluency matters less than terminological consistency and cost
+transparency.
+
+**Evaluated alternatives.**
+
+1. **Dedicated translation APIs (DeepL, Google NMT).**
+   - *Pros:* Predictable per-character pricing.
+   - *Cons:* Roughly $20–25 per 1 million characters for production tiers;
+     limited ability to inject whole-document context or a dynamic glossary
+     per job. The per-document TranslationPlan and glossary are first-class
+     features of our design, so a provider that cannot consume them is a
+     poor fit.
+2. **Heavy LLMs (GPT-4o, Claude 3.5 Sonnet / newer equivalents).**
+   - *Pros:* Best available quality for complex terminology and nuanced
+     register.
+   - *Cons:* An order of magnitude more expensive than smaller models
+     (roughly $3–9 per 1 million tokens). For the assessment's volume of
+     200–400-page documents, this would dominate unit cost without a
+     measured quality benefit for standard business text.
+3. **Lightweight LLMs (`gpt-4o-mini`) — CHOSEN.**
+   - *Pros:* Roughly $0.15–0.60 per 1 million tokens, i.e. tens of times
+     cheaper per character than dedicated NMT APIs and roughly an order of
+     magnitude cheaper than flagship LLMs. It still accepts the full system
+     prompt with the persisted TranslationPlan, glossary, and neighboring
+     source-block context — something classical NMT cannot do.
+   - *Cons:* Potential minor loss of stylistic polish, which is not critical
+     for business documentation.
+
+**Rationale.** `gpt-4o-mini` is the default engine. For standard business
+text, the cost lands in the order of $0.20 per 1 million characters, which
+lets us keep per-document cost low while still feeding document context
+(the persisted TranslationPlan + glossary) and source-side block context
+into every prompt. The model is configurable via `OPENAI_MODEL`, so a
+heavier model can be selected where measured quality justifies the
+additional spend.
+
+**Measured cost.** Final per-document cost, including retried and ambiguous
+provider calls, is recorded per job in `chunk_attempts` and reported in §5.
+Placeholder for the assessment sample document:
+_"The real cost of translating the test document (X pages, Y chunks,
+Z blocks) was $W.WW, including retry attempts."_
+
+---
+
+## 3. Decision record: document format handling
 
 **Context.** The pipeline must accept at least two input formats (PDF, DOCX)
 and return "the same file, translated". The architectural question: how much
@@ -121,7 +170,7 @@ revisited under horizontal scaling (§4).
 
 ---
 
-## 3. Other conscious cuts
+## 4. Other conscious cuts
 
 Seeded from ARCHITECTURE.md §15; each gets a closing paragraph with measured
 impact at the end of implementation:
@@ -137,7 +186,7 @@ impact at the end of implementation:
 
 ---
 
-## 4. Measured numbers
+## 5. Measured numbers
 
 _Pending implementation. To be reported on a fixed sample document:_
 
@@ -151,7 +200,7 @@ _Pending implementation. To be reported on a fixed sample document:_
 
 ---
 
-## 5. Future work — what three more weeks would buy
+## 6. Future work — what three more weeks would buy
 
 1. **Object storage (S3/MinIO) instead of the shared volume.** The shared
    disk is the one thing pinning web, worker, and renderer to the same
