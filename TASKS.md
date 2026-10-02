@@ -44,8 +44,8 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-8 | 1 | Finalize core repository ports with aggregate create_job_with_chunks | done | ffd8cd5 |
 | DT-9 | 1 | Add SQLite persistence schema with claim-loop indexes | done | 5c9777b |
 | DT-10 | 1 | Integrate approved plans, validate implementation, and record orchestration | done | dcf1b81 |
-| DT-11 | 1 | Add minimal environment-backed persistence settings | done | pending commit |
-| DT-12 | 1 | Add async SQLite connection factory and explicit transaction boundary | in-progress | |
+| DT-11 | 1 | Add minimal environment-backed persistence settings | done | 63ecaeb |
+| DT-12 | 1 | Add async SQLite connection factory and explicit transaction boundary | done | pending commit |
 | DT-13 | 1 | Implement document, execution, and cache repositories | in-progress | |
 | DT-14 | 1 | Implement async filesystem storage with contained artifact paths | in-progress | |
 | DT-15 | 1 | Validate persistence integration and record execution corrections | in-progress | |
