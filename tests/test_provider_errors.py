@@ -2,10 +2,10 @@
 
 import pytest
 
-from app.core.errors import ErrorCode, ProviderError
+from app.core.errors import DocumentError, ErrorCode, ProviderError
 
 
-@pytest.mark.parametrize("code", list(ErrorCode))
+@pytest.mark.parametrize("code", [code for code in ErrorCode if code.value.startswith("provider_")])
 def test_catalogued_provider_error_has_safe_message_and_retryability(code: ErrorCode) -> None:
     error = ProviderError(code, tokens_in=12, tokens_out=7, model="gpt-4o-mini")
     assert error.error_code == code
@@ -22,3 +22,14 @@ def test_catalogued_provider_error_has_safe_message_and_retryability(code: Error
     assert error.tokens_in == 12
     assert error.tokens_out == 7
     assert error.model == "gpt-4o-mini"
+
+
+@pytest.mark.parametrize(
+    "code", [ErrorCode.SCANNED_PDF, ErrorCode.CORRUPT_FILE, ErrorCode.RENDER_FAILED]
+)
+def test_document_errors_use_safe_non_retryable_catalog(code: ErrorCode) -> None:
+    error = DocumentError(code)
+    assert error.error_code == code
+    assert str(error) == error.message
+    assert error.message
+    assert error.retryable is False

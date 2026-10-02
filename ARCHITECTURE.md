@@ -354,9 +354,24 @@ typography (font size auto-shrink bounded by a minimum readable size; blocks
 that cannot fit fall back to clean regenerated pages). **Text-oriented PDFs
 come out well; pixel-perfect preservation is explicitly out of scope** —
 columns, complex tables, RTL, and heavy reflow are known limits, listed in
-DECISIONS.md. DOCX renders by in-place run replacement and preserves styles
-natively. The bbox-insertion approach is validated on the sample document
+DECISIONS.md. DOCX uses top-level paragraph blocks: it clears all inline
+content in translated paragraphs, inserts one plain run, and preserves
+paragraph styles/properties. Table cells, headers, and footers remain on the
+original canvas unchanged; their translation is outside the Stage 3 scope.
+The bbox-insertion approach is validated on the sample document
 before we commit to it as the default renderer (§17).
+
+Stage 3 implements both format pairs behind the existing ports. Extraction and
+rendering run in worker threads. The registry reads at most 2048 bytes in a
+thread, checks whitelisted extensions against signatures, and accepts
+extensionless stored uploads by signature. The ZIP signature is a routing hint;
+the DOCX extractor validates the package and maps failures to `corrupt_file`.
+Missing/unsupported files resolve to no adapter. Render failures use
+`render_failed`; raw library exceptions are suppressed. PDF fallback counters
+are local to each render and logged as `pdf_render_completed` with
+`fallback_count` (blocks) and `fallback_pages_count` (appended pages), without
+changing the renderer's `Path` return contract. Measurement and limits are
+recorded in DECISIONS.md under “Stage 3 format measurements”.
 
 ---
 

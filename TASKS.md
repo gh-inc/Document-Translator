@@ -55,6 +55,41 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-19 | 2 | Implement model token cost calculator | done | d8a610c |
 | DT-20 | 2 | Implement structured OpenAI provider and safe error mapping | done | d8a610c |
 | DT-21 | 2 | Verify provider contracts, integration, and Stage 2 delivery | done | d8a610c |
+| DT-22 | 3 | Implement threaded PDF extraction, rendering, and overflow fallback | done | pending delivery commit |
+| DT-23 | 3 | Implement paragraph-level DOCX extraction and style-preserving rendering | done | pending delivery commit |
+| DT-24 | 3 | Implement bounded format resolution and reproducible sample documents | done | pending delivery commit |
+| DT-25 | 3 | Verify format integration, opaque metadata, measurements, and delivery | done | pending delivery commit |
+
+### Stage 3 execution decomposition (2026-10-02)
+
+- **DT-22:** PDF adapter and focused tests; delegated ownership of `pdf.py`
+  and PDF unit tests. Reading order, scanned/corrupt files, redaction,
+  bounded font shrinking, Unicode, and paginated overflow are reviewed.
+- **DT-23:** DOCX adapter and focused tests; delegated ownership of `docx.py`
+  and DOCX unit tests. Paragraph styles survive, inline formatting is cleared,
+  and untouched tables/headers remain on the original canvas.
+- **DT-24:** registry, generator, samples, and registry tests; delegated
+  ownership. Resolution reads at most 2048 bytes in a worker thread.
+- **DT-25:** orchestrator owns safe format errors, metadata and integration
+  tests, independent review, fallback measurements, documentation, full
+  acceptance checks, commits, and hash backfills.
+
+Agents own disjoint files, read architecture and installed library source before
+implementation, and do not commit. The existing core ports/models are retained.
+The approved Stage 3 plan includes DOCX now despite the older stage ordering.
+
+Stage 3 implementation and independent review are complete. Acceptance checks:
+`make test` — 238 passed, 1 live test deselected (including 30 format tests);
+`make lint` — clean; `make typecheck` — clean (22 source files). Live calls were
+not run. Tests requiring actual threads ran outside the tool sandbox without
+changing async behavior. The two existing Pydantic `register` warnings remain.
+Both the FakeProvider-prefix baseline and synthetic >=30% expansion measured
+3/12 fallback blocks and three appended pages on the two-page PDF sample.
+Ordinary paragraphs fit; table rows fall back. DOCX covers top-level paragraphs,
+leaving table cells/headers/footers unchanged. Limits and measurements are in
+DECISIONS.md; ownership, corrections, and review are recorded in the Stage 3
+plan and PROMPTS.md. Delivery uses the plan's single implementation commit
+option followed by a task-hash backfill commit.
 
 ### Stage 2 execution decomposition (2026-10-02)
 

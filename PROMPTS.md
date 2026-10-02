@@ -366,3 +366,65 @@ reused across calls.
 **Result:** the approved plan was written to
 `docs/plans/2026-10-02-stage-2-llm-provider.md` with the four corrections
 embedded as explicit agent reminders and implementation requirements.
+
+### 2026-10-02 — Stage 3 format adapter plan approvals
+
+**User request:** approve the Stage 3 implementation plan and provide additional
+architectural rules for the orchestrator.
+
+**Approved decisions:**
+
+1. **DOCX granularity — paragraph-level blocks.** The renderer clears all
+   existing runs in a translated paragraph, inserts a single new run with the
+   translation, and preserves only the paragraph-level style
+   (`paragraph.style`). Run-level formatting inside a paragraph is intentionally
+   discarded; the LLM does not receive markup, so reconstructing runs would be
+   unreliable.
+2. **PDF strategy — bbox insertion + auto-shrink + fallback page.** Translated
+   text is rendered into the original bbox with auto-shrinking font down to a
+   minimum readable size. If it still does not fit, the renderer creates a new
+   page for that block and records the fallback.
+
+**Additional architectural rules:**
+
+- **Async discipline:** every interaction with `fitz` (PyMuPDF) and
+  `python-docx` (open, iterate, insert, save) must run inside
+  `asyncio.to_thread` to avoid blocking the event loop.
+- **Security:** `FormatRegistry.resolve` reads only the first 2048 bytes of a
+  file for magic-byte validation; the full file is never loaded just to detect
+  its format.
+
+**Result:** the approved plan was written to
+`docs/plans/2026-10-02-stage-3-format-adapters.md` with the two decisions and
+both guardrails embedded as explicit implementation requirements.
+
+### 2026-10-02 — Stage 3 delegated execution and review
+
+**User request:** plan, decompose, delegate, execute, and verify the Stage 3
+format-adapter plan, then commit the completed work.
+
+**Delegation:** three workers owned PDF plus unit tests, DOCX plus unit tests,
+and registry/sample generation plus registry tests. The orchestrator owned
+the shared error catalog, opaque metadata and sample integration tests,
+overflow measurements, documentation, acceptance checks, and delivery.
+Workers read architecture and installed library source before implementation.
+Completed DOCX and registry workers independently reviewed other components.
+
+**Rejected/corrected output:** Linux-only font discovery with a Helvetica
+fallback could silently corrupt non-Latin text; use a bundled Unicode font
+with glyph checks. A 20-character scanned-PDF threshold rejected short valid
+text documents; detect absence of usable text instead. Renderer rejection of
+slightly off-page bboxes from its own extractor was corrected within the PDF
+adapter. Empty supplied translations and fractional font-size shrinking were
+reviewed to ensure consistent source removal and a real 6 pt attempt.
+
+**Scope made explicit:** DOCX translates top-level paragraphs and preserves
+tables/headers/footers unchanged. PDF table rows may move to appended pages;
+layout measurements are reported separately from translation quality. The
+registry's ZIP signature is a routing hint; DOCX package parsing performs the
+actual validation. No new public models, ports, or endpoints were introduced.
+
+**Tooling:** the plan's `superpowers:executing-plans` skill was unavailable;
+native task delegation and repository tools executed its steps. Threaded I/O
+tests ran outside the tool sandbox after standard async tests stalled inside.
+Final verification and measurements are recorded in TASKS.md and DECISIONS.md.

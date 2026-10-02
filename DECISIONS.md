@@ -198,6 +198,54 @@ _Pending implementation. To be reported on a fixed sample document:_
 - **Quality proxy** — back-translation chrF (EN→DE→EN vs. original), used as
   a coarse proxy for information preservation, not as a direct quality metric
 
+### Stage 3 format measurements
+
+The fixed `samples/sample_en.pdf` contains two pages and twelve extracted text
+blocks: nine headings/paragraphs and three table rows. Reproduce the layout
+measurement with:
+
+```bash
+uv run python scripts/generate_sample_docs.py
+uv run pytest tests/adapters/formats/test_pdf_renderer.py -s
+```
+
+| Input to renderer | Fallback blocks | Appended pages | Final pages |
+|---|---:|---:|---:|
+| FakeProvider `[de]` prefix | 3 / 12 (25%) | 3 | 5 |
+| Same output with at least 30% synthetic text expansion | 3 / 12 (25%) | 3 | 5 |
+
+Every translated block is present in the parsed output. All nine
+heading/paragraph blocks fit inside their original bboxes after font shrinking
+to a minimum of 6 pt. The three table rows are represented by the extractor as
+multiline blocks; they move to appended pages. Their original vector grid
+survives, with empty rows where the source text was removed. The rendered sample
+was also visually inspected. This is an explicit table-layout limitation, not
+pixel-perfect table preservation.
+
+**Decision:** retain bbox insertion as the default for text-oriented documents:
+the sample's ordinary text fits even with the synthetic expansion, and overflow
+does not lose content. Table-heavy documents need adapter-specific cell layout
+or a clean-regeneration strategy in later work. Changing the default to full
+regeneration now would discard the original canvas without improving the
+sample's ordinary paragraphs. This measurement does not assess German quality:
+FakeProvider only prefixes text. Actual translation quality, chrF, cost, and
+latency measurements remain for the later measurement stage.
+
+The renderer embeds PyMuPDF's bundled Droid Sans Fallback font buffer under a
+private name so insertion uses the same glyph widths as fitting. A CJK alias
+alone produced clipped Latin lines in review and was rejected. Glyph coverage
+is checked before changing the canvas; unsupported glyphs yield a safe
+`render_failed` error. Complex shaping, RTL, and pixel-perfect typography remain
+outside the supported PDF scope. Per-render structured logs report both
+fallback blocks and appended pages; long-block tests prove full pagination,
+including Cyrillic and CJK, without truncation.
+
+DOCX samples use top-level paragraph blocks, one plain replacement run, and
+preserved paragraph styles/properties. Inline formatting/hyperlinks are removed
+only in translated paragraphs. Table cells, headers, and footers stay unchanged;
+their translation is outside the approved Stage 3 scope. Both generated sample
+files have fixed metadata and reproduce byte-for-byte in tests.
+
 ---
 
 ## 6. Future work — what three more weeks would buy
