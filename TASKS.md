@@ -44,6 +44,11 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-8 | 1 | Finalize core repository ports with aggregate create_job_with_chunks | done | ffd8cd5 |
 | DT-9 | 1 | Add SQLite persistence schema with claim-loop indexes | done | 5c9777b |
 | DT-10 | 1 | Integrate approved plans, validate implementation, and record orchestration | done | dcf1b81 |
+| DT-11 | 1 | Add minimal environment-backed persistence settings | done | pending commit |
+| DT-12 | 1 | Add async SQLite connection factory and explicit transaction boundary | in-progress | |
+| DT-13 | 1 | Implement document, execution, and cache repositories | in-progress | |
+| DT-14 | 1 | Implement async filesystem storage with contained artifact paths | in-progress | |
+| DT-15 | 1 | Validate persistence integration and record execution corrections | in-progress | |
 
 ### Stage 1 execution decomposition (2026-10-02)
 
@@ -59,3 +64,21 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 DT-8 depends on the new record types from DT-7; DT-9 DDL can proceed independently.
 Schema/model parity tests run after DT-7 is ready. Each implementation task gets
 its own commit with its tests and corresponding approved plan.
+
+### Stage 1 persistence implementation decomposition (2026-10-02)
+
+- **DT-11:** minimal Settings with defaults, environment overrides, and tests.
+- **DT-12:** injected async connections, all four PRAGMAs, optional DDL loading,
+  and an explicit application/service transaction context for ordinary writes.
+- **DT-13:** all three existing repository ports, atomic aggregate enqueue,
+  opaque JSON persistence, UTC dates, leases/recovery, attempt accounting, and
+  cache insertion/read-back. Depends on DT-12.
+- **DT-14:** contained upload/output paths, threaded filesystem I/O, and tests
+  for round trips, missing artifacts, traversal, and symlinks.
+- **DT-15:** independent integration/recovery/concurrency review, full checks,
+  updated plan/log documentation, and task commit-hash backfills.
+
+Foundation, repositories, and filesystem work have separate file ownership and
+run in parallel. Existing DT-7–DT-9 remain completed; new work uses new IDs.
+The execution plan's in-memory WAL test and prefix-based path check are corrected
+without changing approved core models, ports, or DDL.
