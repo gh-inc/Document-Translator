@@ -152,4 +152,5 @@ def get_health_service(
     return HealthService(
         persistence,
         lambda: check_storage_writable(settings.upload_storage_path, settings.output_storage_path),
+        stale_chunk_grace_seconds=max(120, 2 * settings.chunk_lease_seconds),
     )

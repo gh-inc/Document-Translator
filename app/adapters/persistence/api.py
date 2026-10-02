@@ -141,6 +141,17 @@ class ApiPersistence:
             row = await cursor.fetchone()
         return row is not None and int(row[0]) == 1
 
+    async def stale_inflight_chunk_count(self, stale_before: datetime) -> int:
+        """Count inflight chunks whose non-null lease expired before the cutoff."""
+        require_connection_access(self._connection)
+        async with self._connection.execute(
+            "SELECT COUNT(*) FROM chunks WHERE status = 'inflight' "
+            "AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
+            (stale_before.astimezone(UTC).isoformat(timespec="microseconds"),),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return 0 if row is None else int(row[0])
+
     async def metrics_snapshot(self) -> dict[str, object]:
         """Return persisted job and attempt aggregates for Prometheus export."""
         require_connection_access(self._connection)
