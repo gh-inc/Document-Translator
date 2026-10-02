@@ -64,11 +64,11 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-28 | 4 | Implement atomic translation checkpoints and cost control | done | 2e17801 |
 | DT-29 | 4 | Implement cache-driven PDF/DOCX assembly | done | 2e17801 |
 | DT-30 | 4 | Wire worker process, verify recovery, review, and deliver | done | 2e17801 |
-| DT-31 | 5 | Wire FastAPI factory, dependencies and structured errors | done | pending delivery hash |
-| DT-32 | 5 | Implement job service, idempotency and retry coordination | done | pending delivery hash |
-| DT-33 | 5 | Implement document upload service and router with triage stub | done | pending delivery hash |
-| DT-34 | 5 | Implement jobs, batches, downloads and SSE routers | done | pending delivery hash |
-| DT-35 | 5 | Implement readiness and metrics; integration review and verification | done | pending delivery hash |
+| DT-31 | 5 | Wire FastAPI factory, dependencies and structured errors | done | 89df2ac |
+| DT-32 | 5 | Implement job service, idempotency and retry coordination | done | 89df2ac |
+| DT-33 | 5 | Implement document upload service and router with triage stub | done | 89df2ac |
+| DT-34 | 5 | Implement jobs, batches, downloads and SSE routers | done | 89df2ac |
+| DT-35 | 5 | Implement readiness and metrics; integration review and verification | done | 89df2ac |
 
 ### Stage 5 execution decomposition (2026-10-02)
 
