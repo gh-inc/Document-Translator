@@ -34,4 +34,4 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
-| DT-1 | 0 | Establish git conventions and task backlog | done | this change |
+| DT-1 | 0 | Establish git conventions and task backlog | done | 8590e81, this fix |
