@@ -489,3 +489,58 @@ WAL writer during provider waits, heartbeat during rendering, SQLite reopen
 recovery, and an actual worker process stopped by SIGTERM after JSON readiness.
 The final test correction counts provider calls per chunk rather than per block.
 Two existing Pydantic warnings remain; no live calls were made.
+
+### 2026-10-02 — Stage 5 REST API plan corrections
+
+**User request:** approve the Stage 5 implementation plan and provide strict
+architectural corrections.
+
+**Approved decisions and corrections:**
+
+1. **Fat-controller prevention.** Chunking, token counting, and job
+   orchestration logic must not live in `routers/jobs.py`. The agent must create
+   `app/core/services/job_service.py` and encapsulate that business logic there.
+   The router remains a thin translation layer between HTTP and the service.
+2. **Triage stub.** Until Stage 6, `POST /api/documents` must synchronously
+   create a default `DocumentAnalysisRecord` through the repository. This makes
+   the full API flow testable end-to-end and will be replaced by the background
+   triage task in Stage 6.
+3. **Worker heartbeat deferred.** `/readyz` checks only SQLite connectivity and
+   storage writability. No heartbeat table is added; worker-heartbeat freshness
+   is deferred to Stage 9.
+4. **SSE disconnect handling.** The SSE events generator must check
+   `await request.is_disconnected()` inside the polling loop and break if the
+   client disconnects, preventing infinite DB polling and resource leaks.
+
+**Result:** the approved plan was written to
+`docs/plans/2026-10-02-stage-5-rest-api.md` with all four corrections embedded
+as explicit implementation requirements.
+
+### 2026-10-02 — Stage 6 triage agent plan corrections
+
+**User review:** the original Stage 6 plan correctly isolated triage from the
+HTTP request via FastAPI `BackgroundTasks`, but the proposed tools were too
+weak and the in-memory task created a stuck-state risk.
+
+**Approved corrections:**
+
+1. **Researcher-style tools.** Removed `detect_language` and `classify_domain`
+   tools. The agent now uses only navigation tools:
+   - `read_blocks(start_seq, count)` — read a slice of document blocks.
+   - `search_blocks(keyword)` — find blocks containing a keyword.
+   The agent justifies its existence by investigating long documents that do
+   not fit in a single context window.
+2. **Chain-of-thought output schema.** Added `TriageAgentOutput(BaseModel)`
+   with `reasoning: str` and `plan: TranslationPlan`. The reasoning field forces
+   the model to think before emitting the final structured plan, reducing
+   hallucinations.
+3. **Stuck-state recovery.** Added `POST /api/documents/{id}/retry-triage` so
+   a document left in `analyzing` after a `kill -9` can be manually restarted.
+4. **Background task DB connection.** `run_triage` opens its own SQLite
+   connection through `SqliteConnectionFactory`; it cannot reuse the
+   request-scoped connection.
+
+**Trade-off logged.** FastAPI `BackgroundTasks` were kept for the MVP because
+they add zero infrastructure overhead, but they are not resilient to process
+kill. The `retry-triage` endpoint is the chosen mitigation; a durable triage
+queue owned by the worker is listed in `DECISIONS.md` as a future improvement.

@@ -69,11 +69,11 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-33 | 5 | Implement document upload service and router with triage stub | done | 89df2ac |
 | DT-34 | 5 | Implement jobs, batches, downloads and SSE routers | done | 89df2ac |
 | DT-35 | 5 | Implement readiness and metrics; integration review and verification | done | 89df2ac |
-| DT-36 | 6 | Add analyzing status and structured triage output | done | pending delivery |
-| DT-37 | 6 | Implement navigation tools, fake and OpenAI triage adapters | done | pending delivery |
-| DT-38 | 6 | Implement background triage, degraded fallback and retry coordination | done | pending delivery |
-| DT-39 | 6 | Wire upload scheduling and enforce job analysis readiness | done | pending delivery |
-| DT-40 | 6 | Verify triage integration, review, document and deliver | done | pending delivery |
+| DT-36 | 6 | Add analyzing status and structured triage output | done | df79429 |
+| DT-37 | 6 | Implement navigation tools, fake and OpenAI triage adapters | done | df79429 |
+| DT-38 | 6 | Implement background triage, degraded fallback and retry coordination | done | df79429 |
+| DT-39 | 6 | Wire upload scheduling and enforce job analysis readiness | done | df79429 |
+| DT-40 | 6 | Verify triage integration, review, document and deliver | done | df79429 |
 
 ### Stage 6 execution decomposition (2026-10-02)
 

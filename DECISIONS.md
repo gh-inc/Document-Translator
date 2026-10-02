@@ -170,7 +170,36 @@ revisited under horizontal scaling (§4).
 
 ---
 
-## 4. Other conscious cuts
+## 4. Decision record: triage agent execution model
+
+**Context.** Triage uses the OpenAI Agents SDK with tool calling. It must not
+block the HTTP upload response, must survive ordinary failures, and must not
+become a single point of failure.
+
+**Evaluated alternatives.**
+
+1. **Synchronous triage in the upload request.**
+   - *Pros:* Simple, no background state.
+   - *Cons:* Agent latency (seconds to tens of seconds) blocks the HTTP response
+     and the client; violates the requirement that a real document takes minutes
+     and the API must not wait.
+2. **Persistent triage queue processed by the worker.**
+   - *Pros:* Survives `kill -9`; reuses the same lease/claim machinery as
+     translation chunks.
+   - *Cons:* Adds a new queue entity to Stage 4, increasing complexity and
+     coupling for the MVP.
+3. **FastAPI BackgroundTasks + retry endpoint — CHOSEN.**
+   - *Pros:* Zero infrastructure overhead; trivially isolates agent latency from
+     HTTP; keeps the worker focused on translation.
+   - *Cons:* Background tasks live in process memory; a `kill -9` during triage
+     leaves the document stuck in `analyzing`. Mitigated by the
+     `POST /api/documents/{id}/retry-triage` endpoint.
+
+**Rationale.** For a 3-day MVP, `BackgroundTasks` are the pragmatic choice. The
+stuck-state risk is explicit and recoverable via the retry endpoint. A durable
+worker-owned triage queue is reserved for the "three more weeks" list.
+
+## 5. Other conscious cuts
 
 Seeded from ARCHITECTURE.md §15; each gets a closing paragraph with measured
 impact at the end of implementation:
@@ -186,7 +215,7 @@ impact at the end of implementation:
 
 ---
 
-## 5. Measured numbers
+## 6. Measured numbers
 
 _Pending implementation. To be reported on a fixed sample document:_
 
@@ -248,9 +277,10 @@ files have fixed metadata and reproduce byte-for-byte in tests.
 
 ---
 
-## 6. Future work — what three more weeks would buy
+## 7. Future work — what three more weeks would buy
 
-1. **Object storage (S3/MinIO) instead of the shared volume.** The shared
+1. **Durable triage queue.** Move triage from FastAPI BackgroundTasks into the worker's claim loop with leases and retries, eliminating the stuck-`analyzing` risk and the need for a manual retry endpoint.
+2. **Object storage (S3/MinIO) instead of the shared volume.** The shared
    disk is the one thing pinning web, worker, and renderer to the same
    filesystem. Moving uploads and outputs to object storage (presigned
    up/downloads; the renderer fetches its canvas object) is the
