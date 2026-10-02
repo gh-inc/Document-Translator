@@ -108,15 +108,15 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-65 | 9 | Publish MCP downloads readable by the host from non-root containers | done | d1a4809 |
 
 | DT-66 | 10 | Record prior assessment relocation and plan restoration | done | d3e5089, 06354ce |
-| DT-67 | 10 | Resolve measurement documentation drift | done | pending delivery hash |
-| DT-68 | 10 | Add reviewer architecture and agent-placement answers | done | pending delivery hash |
-| DT-69 | 10 | Consolidate verification commands and prerequisites | done | pending delivery hash |
-| DT-70 | 10 | Build Docker image in CI | done | pending delivery hash |
-| DT-71 | 10 | Package assessment context and repair live links | done | pending delivery hash |
-| DT-72 | 10 | Record literal submission checklist evidence | done | pending delivery hash |
-| DT-73 | 10 | Verify MCP with an isolated editor client | done | pending delivery hash |
-| DT-74 | 10 | Verify secret hygiene and record delivery commits | done | pending delivery hash |
-| DT-75 | 10 | Run final checks and independently review Stage 10 | done | pending delivery hash |
+| DT-67 | 10 | Resolve measurement documentation drift | done | f65699e |
+| DT-68 | 10 | Add reviewer architecture and agent-placement answers | done | f65699e |
+| DT-69 | 10 | Consolidate verification commands and prerequisites | done | f65699e |
+| DT-70 | 10 | Build Docker image in CI | done | f65699e |
+| DT-71 | 10 | Package assessment context and repair live links | done | f65699e |
+| DT-72 | 10 | Record literal submission checklist evidence | done | f65699e |
+| DT-73 | 10 | Verify MCP with an isolated editor client | done | f65699e |
+| DT-74 | 10 | Verify secret hygiene and record delivery commits | done | f65699e |
+| DT-75 | 10 | Run final checks and independently review Stage 10 | done | f65699e |
 
 ### Stage 10 execution decomposition (2026-10-03)
 

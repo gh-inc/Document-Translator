@@ -737,6 +737,40 @@ approved verification approach requires installing it in the runtime image.
 `docs/plans/2026-10-02-stage-9-e2e-chaos-observability.md`; the readiness
 decision is recorded in `DECISIONS.md` §10.
 
+### 2026-10-02 — Stage 10 submission-prep rulings
+
+**User review:** the Stage 10 plan identified two things worth fixing before
+delivery — documentation drift inside `DECISIONS.md`, and the fact that the
+reviewer had to follow internal links to reach the brief's explicit questions.
+
+**Approved rulings:**
+
+1. **Documentation drift is a real defect.** `DECISIONS.md` §6 still advertised
+   "pending implementation" measurements while §9 already reported them. A
+   reviewer reading both cannot tell which is current. Resolve it.
+2. **README carries the reviewer-facing answers.** Add an architecture summary,
+   "who this is for", the three acceptance criteria, and a requirement map
+   directly in the README. The small duplication with `ARCHITECTURE.md` is an
+   accepted tradeoff: reviewer convenience outranks strict DRY in a submission
+   document. The section header must use the exact phrase **"Where an agent
+   earns its keep"** so the answer to the brief's question is instantly
+   recognizable.
+3. **Docker build belongs in CI.** It lengthens the pipeline, but image
+   buildability is a hard requirement and nothing else would catch a broken
+   `Dockerfile` before a reviewer runs it.
+4. **Git lifecycle is human-owned.** No remote, no push, no rebase/amend/squash.
+   Repository publication and history compression stay with the human.
+5. **Assessment artifacts are relocated.** `TEST_TASK.md`, `docs/roadmap.md`, and
+   the uncommitted Stage 9 plan move to `docs/assessment_context/`, keeping the
+   root about the product while preserving the assessment record. Historical
+   execution records that mention the old paths are left untouched: they are
+   accurate statements about their moment, and rewriting them would be its own
+   kind of falsification. Only live navigational links are updated.
+
+**Result:** the plan is in
+`docs/plans/2026-10-02-stage-10-submission.md`; artifacts were relocated and the
+backlog pointer was updated.
+
 ### 2026-10-03 — Stage 10 delegated execution and review
 
 **Request:** execute the approved submission plan with orchestration,

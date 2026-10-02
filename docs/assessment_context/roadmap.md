@@ -283,3 +283,8 @@ OpenAPI Usage:
 **Exit criteria:** every item in `TEST_TASK.md` «Before Submitting» is checked.
 
 **Dependencies:** Stage 9.
+
+Status: Completed
+OpenAPI Usage:
+  Token usage:         160K total  (136K input + 24.6K output)
+  Context window:      53% left (128K used / 258K)
