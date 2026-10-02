@@ -474,7 +474,13 @@ Three bounded attempts precede a heuristic degraded fallback. Analysis and the
 `extracted` transition commit together. Jobs require completed analysis and
 return `409 analysis_pending` while it is unavailable. Explicit retry recovers
 process crashes without adding a schema lease. New uploads use content digest
-IDs to reuse their original analysis. Upload/triage locks assume one web process.
+IDs to reuse their original analysis. Stage 7 shares advisory document locks
+between REST and MCP on the local data filesystem. A service commits a conditional
+status claim before scheduling triage; the held lock excludes live owners and
+releases on process death, allowing abandoned `analyzing` recovery without a
+schema lease. Analysis uses short-lived DB connections, closed during provider
+calls. Content-addressed upload locking also protects shared artifacts across
+the two front doors.
 Analysis becomes immutable after the first translation job; retrying a degraded
 plan after that returns conflict to preserve worker/cache consistency. Atomic
 enqueue rejects stale analysis terms after concurrent triage replacement.
@@ -504,6 +510,19 @@ FastMCP, streamable-http, `:8001`. Tool surface designed for editor workflow —
 README ships the exact Claude Code config
 (`claude mcp add --transport http stark-translate http://localhost:8001/mcp`)
 and a three-step verification recipe.
+
+Stage 7 implements the four tools with explicit Pydantic success/error results.
+Polling is bounded by `MCP_TRIAGE_TIMEOUT_SECONDS` (default and maximum 45s),
+including repository waits and asynchronous sleeps. A pending result contains
+the safe catalogued error and document ID. `check_status` accepts that document
+ID in its existing string parameter and reports readiness; after extraction,
+the caller repeats `translate_file` to enqueue. MCP submissions use stable
+content/language idempotency keys and return immediately after enqueue.
+Downloads are atomically copied into validated shared output directories.
+FastMCP owns startup/cleanup, initializes WAL before tools are accepted, and
+releases claimed triage work during shutdown. `python -m app.mcp_server` serves
+`0.0.0.0:8001/mcp`; Compose wiring remains Stage 9. Host bind source
+`MCP_HOST_SHARED_DIR` is separate from the in-container `MCP_SHARED_DIR`.
 
 ---
 

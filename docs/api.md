@@ -59,12 +59,21 @@ retrying degraded analysis returns `409 conflict` to preserve resumed-job and
 translation-cache consistency. A successful analysis is reused; duplicate scheduled tasks skip completed work.
 Missing documents return 404; failed extraction cannot be retried through
 triage. Background tasks are in-process and are not automatically restarted.
-The service supports one web process: upload and per-document triage locks are
-process-local, not distributed leases. Upload extraction is serialized to
-protect shared content-addressed artifacts; provider analysis does not hold
-that lock or a database transaction. Storage/DB failures can leave `analyzing`
+REST and MCP share per-document advisory filesystem locks on the local data
+volume. A conditional SQLite update claims eligible triage before background
+scheduling; only the owner schedules analysis. Process death releases the lock
+and a new MCP submission or explicit REST retry recovers abandoned analysis.
+Request cancellation also releases ownership. Shared upload locking protects
+content-addressed artifacts across the two processes; provider analysis does not
+hold that upload lock, a database connection, or a transaction.
+Storage/DB failures can leave `analyzing`
 for explicit recovery. Empty extracted content is marked `failed/corrupt_file`.
 SDK tracing is disabled; raw exceptions and document text are never logged.
+
+`GET /api/jobs?limit=10` returns recent job summaries, newest first with stable
+ID ordering for equal creation timestamps. The shared service clamps integer
+limits to 1–100; malformed REST query parameters return a catalogued 422 error.
+An empty collection is `[]`. MCP calls the same service directly.
 
 ## Retry and costs
 

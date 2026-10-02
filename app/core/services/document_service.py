@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 
 from app.config import Settings
@@ -22,6 +22,7 @@ _SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._ -]")
 
 TransactionContext = Callable[[], AbstractAsyncContextManager[object]]
 UploadCleanup = Callable[[str], Awaitable[None]]
+UploadContext = Callable[[str], AbstractAsyncContextManager[object]]
 
 
 class DocumentService:
@@ -37,6 +38,7 @@ class DocumentService:
         cleanup_upload: UploadCleanup | None = None,
         upload_lock: asyncio.Lock | None = None,
         analysis_in_use: Callable[[str], Awaitable[bool]] | None = None,
+        upload_context: UploadContext | None = None,
     ) -> None:
         self._document_repo = document_repo
         self._file_storage = file_storage
@@ -46,6 +48,7 @@ class DocumentService:
         self._cleanup_upload = cleanup_upload
         self._upload_lock = upload_lock or asyncio.Lock()
         self._analysis_in_use = analysis_in_use
+        self._upload_context = upload_context
 
     async def upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
         """Validate and persist one upload; return its record and extracted block count."""
@@ -62,6 +65,13 @@ class DocumentService:
             raise ServiceError(ErrorCode.UNSUPPORTED_FORMAT, status_code=415)
 
         document_id = await asyncio.to_thread(lambda: hashlib.sha256(content).hexdigest())
+        context = self._upload_context(document_id) if self._upload_context else nullcontext()
+        async with context:
+            return await self._upload_document(document_id, safe_filename, file_format, content)
+
+    async def _upload_document(
+        self, document_id: str, safe_filename: str, file_format: str, content: bytes
+    ) -> tuple[DocumentRecord, int]:
         existing = await self._document_repo.get_document(document_id)
         if existing is not None:
             if existing.format != file_format:
@@ -131,9 +141,9 @@ class DocumentService:
                     raise ServiceError(ErrorCode.CONFLICT, status_code=409)
                 if document.status is DocumentStatus.FAILED:
                     raise ServiceError(ErrorCode.CONFLICT, status_code=409)
-                await self._document_repo.update_document_status(
-                    document_id, DocumentStatus.ANALYZING
-                )
+                # The shared scheduler commits the conditional claim before
+                # scheduling work. This service validates retry eligibility;
+                # it must not reset status while another process owns triage.
                 document = document.model_copy(update={"status": DocumentStatus.ANALYZING})
             blocks = await self._document_repo.get_blocks(document_id)
         return document, len(blocks)

@@ -49,6 +49,14 @@ async def create_jobs(
     )
 
 
+@router.get("/api/jobs", response_model=list[JobSummaryResponse])
+async def list_recent_jobs(
+    service: Annotated[JobService, Depends(get_job_service)],
+    limit: int = 10,
+) -> list[JobSummaryResponse]:
+    return [_summary(job) for job in await service.list_recent_jobs(limit)]
+
+
 @router.get("/api/jobs/{job_id}", response_model=JobSummaryResponse)
 async def get_job(
     job_id: str,

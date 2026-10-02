@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     database_path: Path = Path("/data/app.db")
     upload_storage_path: Path = Path("/data/uploads")
     output_storage_path: Path = Path("/data/out")
+    mcp_shared_dir: Path = Path("/mcp-files")
+    mcp_triage_poll_interval_seconds: float = Field(
+        default=0.1, gt=0.0, le=5.0, allow_inf_nan=False
+    )
+    mcp_triage_timeout_seconds: float = Field(default=45.0, gt=0.0, le=45.0, allow_inf_nan=False)
     openai_api_key: SecretStr = SecretStr("")
     openai_model: str = Field(default="gpt-4o-mini", min_length=1)
     llm_provider: Literal["openai", "fake"] = "openai"

@@ -2,25 +2,50 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 import structlog
 
 from app.core.errors import ErrorCode
-from app.core.models import DocumentIR, DocumentStatus, TranslationPlan, TriageStatus
-from app.core.ports import DocumentRepository, TriageAgent
+from app.core.models import (
+    Block,
+    DocumentAnalysisRecord,
+    DocumentIR,
+    DocumentRecord,
+    DocumentStatus,
+    TranslationPlan,
+    TriageStatus,
+)
+from app.core.ports import TriageAgent
 from app.core.services.document_service import TransactionContext
 
 logger = structlog.get_logger(__name__)
 
 
+class AnalysisRepository(Protocol):
+    """Internal subset of document persistence used by triage."""
+
+    async def get_document(self, document_id: str) -> DocumentRecord | None: ...
+    async def get_blocks(self, document_id: str) -> list[Block]: ...
+    async def get_analysis(self, document_id: str) -> DocumentAnalysisRecord | None: ...
+    async def save_analysis(
+        self, document_id: str, plan: TranslationPlan
+    ) -> DocumentAnalysisRecord: ...
+    async def update_document_status(
+        self, document_id: str, status: DocumentStatus, error_code: str | None = None
+    ) -> None: ...
+
+
 class TriageService:
     def __init__(
         self,
-        repository: DocumentRepository,
+        repository: AnalysisRepository,
         agent: TriageAgent,
         transaction_context: TransactionContext,
         discard_degraded_analysis: Callable[[str], Awaitable[None]],
         *,
+        claim_analysis: Callable[[str], Awaitable[bool]] | None = None,
+        analysis_in_use: Callable[[str], Awaitable[bool]] | None = None,
         attempt_timeout_seconds: float = 60,
         retry_delay_seconds: float = 0.1,
     ) -> None:
@@ -28,8 +53,32 @@ class TriageService:
         self._agent = agent
         self._transaction = transaction_context
         self._discard_degraded_analysis = discard_degraded_analysis
+        self._claim_analysis = claim_analysis
+        self._analysis_in_use = analysis_in_use
         self._attempt_timeout_seconds = attempt_timeout_seconds
         self._retry_delay_seconds = retry_delay_seconds
+
+    async def claim(self, document_id: str) -> bool:
+        """Commit one conditional claim before scheduling any background work."""
+        if self._claim_analysis is None:
+            raise RuntimeError("triage claim persistence is not configured")
+        async with self._transaction():
+            if await self._claim_analysis(document_id):
+                return True
+            # Old interrupted transitions can leave a persisted immutable
+            # analysis marked ANALYZING. Repair readiness without invoking or
+            # overwriting the agent contract.
+            document = await self._repository.get_document(document_id)
+            analysis = await self._repository.get_analysis(document_id)
+            frozen = self._analysis_in_use is not None and await self._analysis_in_use(document_id)
+            if (
+                document is not None
+                and document.status is DocumentStatus.ANALYZING
+                and analysis is not None
+                and (analysis.triage_status is TriageStatus.OK or frozen)
+            ):
+                await self._repository.update_document_status(document_id, DocumentStatus.EXTRACTED)
+            return False
 
     async def run(self, document_id: str) -> None:
         document = await self._repository.get_document(document_id)
@@ -74,7 +123,8 @@ class TriageService:
         async with self._transaction():
             # A competing successful task must never be overwritten by fallback.
             current = await self._repository.get_analysis(document_id)
-            if current is None or current.triage_status is TriageStatus.DEGRADED:
+            frozen = self._analysis_in_use is not None and await self._analysis_in_use(document_id)
+            if not frozen and (current is None or current.triage_status is TriageStatus.DEGRADED):
                 await self._discard_degraded_analysis(document_id)
                 await self._repository.save_analysis(document_id, plan)
             await self._repository.update_document_status(document_id, DocumentStatus.EXTRACTED)

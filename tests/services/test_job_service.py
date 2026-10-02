@@ -156,6 +156,48 @@ async def test_create_jobs_chunks_whole_blocks_and_normalizes_idempotent_batch(
     assert [int(row[2]) for row in rows] == [0, 1, 0, 1]
 
 
+async def test_recent_jobs_are_newest_first_with_a_default_limit(
+    job_context: dict[str, Any],
+) -> None:
+    service: JobService = job_context["service"]
+    assert await service.list_recent_jobs() == []
+    created = await service.create_jobs(
+        "doc-1", [f"language-{index}" for index in range(12)], "recent-jobs"
+    )
+    newest_first = sorted(created, key=lambda job: job.created_at, reverse=True)
+
+    assert await service.list_recent_jobs() == newest_first[:10]
+    assert await service.list_recent_jobs(2) == newest_first[:2]
+
+
+@pytest.mark.parametrize(("limit", "expected"), [(-3, 1), (0, 1), (1, 1), (100, 100), (101, 100)])
+async def test_recent_jobs_clamps_limit_before_querying(
+    job_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    limit: int,
+    expected: int,
+) -> None:
+    requested_limits: list[int] = []
+
+    async def list_recent_jobs(bounded_limit: int) -> list[JobRecord]:
+        requested_limits.append(bounded_limit)
+        return []
+
+    monkeypatch.setattr(job_context["persistence"], "list_recent_jobs", list_recent_jobs)
+    assert await job_context["service"].list_recent_jobs(limit) == []
+    assert requested_limits == [expected]
+
+
+@pytest.mark.parametrize("limit", [True, False, None, "10", 2.5])
+async def test_recent_jobs_rejects_noninteger_limits_with_safe_error(
+    job_context: dict[str, Any], limit: Any
+) -> None:
+    with pytest.raises(ServiceError) as invalid:
+        await job_context["service"].list_recent_jobs(limit)
+    assert invalid.value.error_code is ErrorCode.INVALID_REQUEST
+    assert invalid.value.status_code == 422
+
+
 async def test_same_key_with_different_document_or_language_set_conflicts(
     job_context: dict[str, Any],
 ) -> None:

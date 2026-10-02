@@ -12,6 +12,7 @@ from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
 from app.adapters.llm.openai_provider import OpenAIProvider
 from app.adapters.llm.pricing import ModelCostCalculator
+from app.adapters.llm.triage_runtime import ClaimedTriage
 from app.adapters.persistence.api import ApiJobExecutionRepository, ApiPersistence
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import (
@@ -20,6 +21,7 @@ from app.adapters.persistence.repositories import (
     SqliteTranslationCacheRepository,
 )
 from app.adapters.persistence.triage import TriagePersistence
+from app.adapters.storage.document_locks import document_upload_lock
 from app.adapters.storage.filesystem import FilesystemStorage
 from app.adapters.storage.readiness import check_storage_writable
 from app.config import Settings
@@ -35,6 +37,19 @@ def get_settings(request: Request) -> Settings:
 
 
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
+
+
+async def get_triage_claims() -> AsyncIterator[list[ClaimedTriage]]:
+    """Release prepared ownership even if sending the response is cancelled."""
+    claims: list[ClaimedTriage] = []
+    try:
+        yield claims
+    finally:
+        for claim in claims:
+            await claim.close()
+
+
+TriageClaimsDependency = Annotated[list[ClaimedTriage], Depends(get_triage_claims)]
 
 
 async def get_db_connection(settings: SettingsDependency) -> AsyncIterator[Connection]:
@@ -95,14 +110,15 @@ def get_cost_calculator() -> ModelCostCalculator:
 
 def get_document_service(
     request: Request,
-    connection: ConnectionDependency,
+    connection: Annotated[Connection, Depends(get_db_connection, scope="function")],
     settings: SettingsDependency,
-    document_repo: Annotated[SqliteDocumentRepository, Depends(get_document_repo)],
     storage: Annotated[FilesystemStorage, Depends(get_file_storage)],
     registry: Annotated[FormatRegistry, Depends(get_format_registry)],
 ) -> DocumentService:
+    # Upload/retry connections close before response background tasks run.
+    # Streaming job routes retain their separate request-scoped connection.
     return DocumentService(
-        document_repo,
+        SqliteDocumentRepository(connection),
         storage,
         registry,
         lambda: transaction(connection),
@@ -110,6 +126,9 @@ def get_document_service(
         cleanup_upload=storage.remove_upload,
         upload_lock=request.app.state.upload_lock,
         analysis_in_use=TriagePersistence(connection).has_jobs,
+        upload_context=lambda document_id: document_upload_lock(
+            settings.database_path, document_id
+        ),
     )
 
 

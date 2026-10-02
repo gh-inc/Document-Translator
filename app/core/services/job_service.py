@@ -49,6 +49,8 @@ class JobServicePersistence(Protocol):
 
     async def get_jobs_by_batch(self, batch_id: str) -> list[JobRecord]: ...
 
+    async def list_recent_jobs(self, limit: int) -> list[JobRecord]: ...
+
     async def retry_job(
         self,
         job_id: str,
@@ -231,6 +233,12 @@ class JobService:
 
     async def get_jobs_by_batch(self, batch_id: str) -> list[JobRecord]:
         return await self._persistence.get_jobs_by_batch(batch_id)
+
+    async def list_recent_jobs(self, limit: int = 10) -> list[JobRecord]:
+        """Return newest jobs with a bounded result count shared by all callers."""
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise self._error(ErrorCode.INVALID_REQUEST, 422)
+        return await self._persistence.list_recent_jobs(max(1, min(limit, 100)))
 
     async def retry_job(
         self,

@@ -74,6 +74,35 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-38 | 6 | Implement background triage, degraded fallback and retry coordination | done | df79429 |
 | DT-39 | 6 | Wire upload scheduling and enforce job analysis readiness | done | df79429 |
 | DT-40 | 6 | Verify triage integration, review, document and deliver | done | df79429 |
+| DT-41 | 7 | Add shared-directory settings and path containment | done | pending delivery commit |
+| DT-42 | 7 | Add recent-job query and REST collection route | done | pending delivery commit |
+| DT-43 | 7 | Compose MCP runtime and streamable HTTP lifecycle | done | pending delivery commit |
+| DT-44 | 7 | Implement bounded submission and atomic cross-process triage | done | pending delivery commit |
+| DT-45 | 7 | Add job tools and protocol/worker end-to-end tests | done | pending delivery commit |
+| DT-46 | 7 | Document, review, verify and deliver Stage 7 | done | pending delivery commit |
+
+### Stage 7 execution decomposition (2026-10-02)
+
+Root owns DT-41 config/path validation and DT-46 docs/integration/delivery.
+Delegated DT-42 recent jobs, DT-44 shared triage, DT-43–DT-45 MCP tools and
+protocol tests to disjoint owners; a separate reviewer checked the final scope.
+The approved plan and user refinements authorize the public additions.
+Keep the existing SQLite schema; service-initiated conditional claims accompany
+shared advisory locks, allowing cross-process exclusivity and killed-owner
+recovery. Per-document upload locking also protects shared ingestion artifacts.
+MCP polls with short connection scopes, returns pending within 45 seconds even
+under writer contention, and retains background readiness work after timeout.
+Use the returned document ID with check_status and resubmit once extracted.
+
+Acceptance: `make test` — 421 passed, 2 live tests deselected; `make lint` — clean
+(130 files); `make typecheck` — clean (57 source files). Independent MCP review:
+31 tests passed and no remaining findings. Real local streamable HTTP:
+four tools discovered; PDF submitted, fake worker completed, translated file
+downloaded; recent jobs and containment rejection verified. No live OpenAI calls.
+Manual Claude Code with an isolated temporary MCP config returned a client error;
+authenticated editor validation remains unverified, with a reproduction recipe
+in README. Compose delivery remains Stage 9. Existing user edits are preserved;
+only Stage 7 documentation hunks enter delivery. See the execution record.
 
 ### Stage 6 execution decomposition (2026-10-02)
 

@@ -544,3 +544,23 @@ weak and the in-memory task created a stuck-state risk.
 they add zero infrastructure overhead, but they are not resilient to process
 kill. The `retry-triage` endpoint is the chosen mitigation; a durable triage
 queue owned by the worker is listed in `DECISIONS.md` as a future improvement.
+
+### Stage 7 MCP execution (2026-10-02)
+
+User approved the Stage 7 plan, secure shared-path resolver, atomic triage claims
+across REST/MCP and a maximum 45-second polling deadline; requested orchestration,
+delegation, validation and a final commit. Root divided work into DT-41–DT-46,
+assigned recent jobs, shared triage and MCP implementation to separate agents,
+and retained config/path validation, docs, real HTTP verification and delivery.
+Implementers used the existing services directly and inspected installed FastMCP.
+An independent reviewer examined concurrency, cancellation, paths and lifecycle.
+
+Rejected the old process-local triage lock as cross-process protection and an
+unconditional analyzing-to-analyzing update as a unique claim. Shared advisory
+ownership accompanies the service's conditional update, with crash recovery
+without schema changes. Review also required cleanup for cancellation before a
+background task's first execution and restoration of an analyzing record with an
+existing successful plan. Shared upload ownership protects duplicate-content
+artifacts from a losing ingestion cleanup. Timeout recovery uses the returned
+document ID with check_status, followed by idempotent resubmission when extracted.
+All project LLM checks remain offline using fake providers.

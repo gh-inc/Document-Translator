@@ -105,6 +105,21 @@ class ApiPersistence:
     async def get_jobs_by_batch(self, batch_id: str) -> list[JobRecord]:
         return await self._jobs.get_jobs_by_batch(batch_id)
 
+    async def list_recent_jobs(self, limit: int) -> list[JobRecord]:
+        """Read newest jobs, using their ids to resolve creation-time ties."""
+        require_connection_access(self._connection)
+        async with self._connection.execute(
+            "SELECT id FROM jobs ORDER BY created_at DESC, id ASC LIMIT ?",
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        jobs: list[JobRecord] = []
+        for row in rows:
+            job = await self._jobs.get_job(str(row["id"]))
+            if job is not None:
+                jobs.append(job)
+        return jobs
+
     async def get_batch_family(self, request_digest: str) -> list[JobRecord]:
         """Find jobs sharing the stable request-key prefix in their batch id."""
         require_connection_access(self._connection)

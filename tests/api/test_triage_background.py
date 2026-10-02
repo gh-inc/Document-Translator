@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from app.adapters.llm.triage_runtime import prepare_triage
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.adapters.persistence.triage import TriagePersistence
@@ -73,7 +74,9 @@ async def upload(client: httpx.AsyncClient) -> httpx.Response:
     return await client.post("/api/documents", files={"file": (SAMPLE.name, SAMPLE.read_bytes())})
 
 
-async def start_raw_upload(app: FastAPI) -> tuple[asyncio.Task, dict]:
+async def start_raw_upload(
+    app: FastAPI, *, send_failure: bool = False
+) -> tuple[asyncio.Task, dict]:
     """Observe response transmission while Starlette still awaits BackgroundTasks.
 
     httpx's ASGITransport awaits background completion before returning to its
@@ -116,6 +119,8 @@ async def start_raw_upload(app: FastAPI) -> tuple[asyncio.Task, dict]:
             response_parts.append(message.get("body", b""))
             if not message.get("more_body", False):
                 sent.set()
+                if send_failure:
+                    raise RuntimeError("injected response send failure")
 
     task = asyncio.create_task(app(scope, receive, send))
     try:
@@ -412,3 +417,48 @@ async def test_duplicate_upload_still_rejects_mismatched_suffix(runtime) -> None
     repeated = await upload(client)
     assert repeated.status_code == 200
     assert repeated.json()["id"] == original["id"]
+
+
+async def test_response_send_failure_releases_unscheduled_claim(runtime) -> None:
+    app, settings, _client = runtime
+    agent = ControlledAgent()
+    app.state.triage_agent_factory = lambda _: agent
+    task, payload = await start_raw_upload(app, send_failure=True)
+    with pytest.raises(RuntimeError, match="injected response send failure"):
+        await task
+    assert agent.calls == 0
+    recovered = await prepare_triage(payload["id"], settings, lambda _: agent)
+    assert recovered is not None
+    await recovered.run()
+    assert agent.calls == 1
+    async with repository(settings) as repo:
+        assert (await repo.get_document(payload["id"])).status is DocumentStatus.EXTRACTED
+
+
+async def test_independent_app_uploads_keep_original_artifact_and_one_analysis(runtime) -> None:
+    app, settings, client = runtime
+    agent = ControlledAgent()
+    app.state.triage_agent_factory = lambda _: agent
+    independent = create_app(settings)
+    independent.state.triage_agent_factory = lambda _: agent
+    async with (
+        independent.router.lifespan_context(independent),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=independent), base_url="http://test"
+        ) as second_client,
+    ):
+        first, second = await asyncio.gather(
+            upload(client),
+            second_client.post(
+                "/api/documents", files={"file": ("renamed.pdf", SAMPLE.read_bytes())}
+            ),
+        )
+    assert first.status_code == second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+    assert agent.calls == 1
+    async with repository(settings) as repo:
+        document = await repo.get_document(first.json()["id"])
+        assert document.status is DocumentStatus.EXTRACTED
+        assert (
+            await asyncio.to_thread(Path(document.storage_path).read_bytes) == SAMPLE.read_bytes()
+        )

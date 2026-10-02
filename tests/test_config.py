@@ -7,6 +7,29 @@ from pydantic import SecretStr, ValidationError
 from app.config import Settings
 
 
+def test_mcp_settings_defaults_environment_and_bounds(monkeypatch) -> None:
+    for name in (
+        "MCP_SHARED_DIR",
+        "MCP_TRIAGE_POLL_INTERVAL_SECONDS",
+        "MCP_TRIAGE_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings()
+    assert settings.mcp_shared_dir == Path("/mcp-files")
+    assert settings.mcp_triage_timeout_seconds == 45
+    assert settings.mcp_triage_poll_interval_seconds == 0.1
+    monkeypatch.setenv("MCP_SHARED_DIR", "/tmp/shared")
+    monkeypatch.setenv("MCP_TRIAGE_TIMEOUT_SECONDS", "10")
+    assert Settings().mcp_shared_dir == Path("/tmp/shared")
+    assert Settings().mcp_triage_timeout_seconds == 10
+    for value in (0, -1, 45.1, float("nan"), float("inf")):
+        with pytest.raises(ValidationError):
+            Settings(mcp_triage_timeout_seconds=value)
+    for value in (0, -1, 5.1, float("nan"), float("inf")):
+        with pytest.raises(ValidationError):
+            Settings(mcp_triage_poll_interval_seconds=value)
+
+
 def test_settings_have_path_defaults(monkeypatch) -> None:
     for name in ("DATABASE_PATH", "UPLOAD_STORAGE_PATH", "OUTPUT_STORAGE_PATH"):
         monkeypatch.delenv(name, raising=False)

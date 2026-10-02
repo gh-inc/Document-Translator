@@ -169,6 +169,57 @@ async def test_upload_create_jobs_idempotency_and_batch(api_runtime) -> None:
         assert status.json()["total_chunks"] > 0
 
 
+async def test_recent_jobs_returns_empty_collection(api_runtime) -> None:
+    _, _, client = api_runtime
+    response = await client.get("/api/jobs")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:
+    _, _, client = api_runtime
+    document_id = await _upload(client, "sample_en.pdf")
+    created = await client.post(
+        "/api/jobs",
+        json={
+            "document_id": document_id,
+            "target_languages": [f"language-{index}" for index in range(12)],
+            "idempotency_key": "recent-api-jobs",
+        },
+    )
+    assert created.status_code == 200
+    jobs = created.json()["jobs"]
+    default_response = await client.get("/api/jobs")
+    assert default_response.status_code == 200
+    assert default_response.json() == list(reversed(jobs))[:10]
+    assert set(default_response.json()[0]) == {
+        "id",
+        "document_id",
+        "batch_id",
+        "target_language",
+        "status",
+        "total_chunks",
+        "done_chunks",
+        "cost_usd",
+        "error",
+    }
+    for limit, expected in [(2, 2), (0, 1), (-1, 1), (101, 12)]:
+        response = await client.get("/api/jobs", params={"limit": limit})
+        assert response.status_code == 200
+        assert response.json() == list(reversed(jobs))[:expected]
+
+
+async def test_recent_jobs_invalid_limit_uses_error_catalog(api_runtime) -> None:
+    _, _, client = api_runtime
+    response = await client.get("/api/jobs", params={"limit": "private-invalid-value"})
+    assert response.status_code == 422
+    assert response.json() == {
+        "error_code": "invalid_request",
+        "message": "Request validation failed",
+        "retryable": False,
+    }
+
+
 @pytest.mark.parametrize(
     ("sample", "expected_signature"),
     [("sample_en.docx", b"PK\x03\x04"), ("sample_en.pdf", b"%PDF-")],
