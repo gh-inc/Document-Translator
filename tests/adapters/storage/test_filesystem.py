@@ -180,3 +180,27 @@ async def test_failed_atomic_replace_cleans_temporary_file(
     assert [path.name for path in files] == ["source.pdf"]
     assert not any(path.name.startswith(_TEMP_PREFIX) for path in files)
     assert files[0].read_bytes() == b"first"
+
+
+async def test_failed_ingestion_cleanup_keeps_other_artifacts(tmp_path: Path) -> None:
+    storage = FilesystemStorage(tmp_path / "uploads", tmp_path / "out")
+    failed = await storage.save_upload("failed", b"bad", "bad.pdf")
+    good = await storage.save_upload("good", b"source", "good.pdf")
+    output = await storage.save_output("job-1", b"result", "result.pdf")
+
+    await storage.remove_upload("failed")
+    await storage.remove_upload("missing")
+
+    assert not failed.parent.exists()
+    assert good.read_bytes() == b"source"
+    assert output.read_bytes() == b"result"
+
+
+async def test_cleanup_rejects_symlink_directory(tmp_path: Path) -> None:
+    storage = FilesystemStorage(tmp_path / "uploads", tmp_path / "out")
+    original = await storage.save_upload("original", b"keep", "source.pdf")
+    (tmp_path / "uploads" / "alias").symlink_to(original.parent, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink"):
+        await storage.remove_upload("alias")
+    assert original.read_bytes() == b"keep"

@@ -64,6 +64,42 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-28 | 4 | Implement atomic translation checkpoints and cost control | done | 2e17801 |
 | DT-29 | 4 | Implement cache-driven PDF/DOCX assembly | done | 2e17801 |
 | DT-30 | 4 | Wire worker process, verify recovery, review, and deliver | done | 2e17801 |
+| DT-31 | 5 | Wire FastAPI factory, dependencies and structured errors | done | pending delivery hash |
+| DT-32 | 5 | Implement job service, idempotency and retry coordination | done | pending delivery hash |
+| DT-33 | 5 | Implement document upload service and router with triage stub | done | pending delivery hash |
+| DT-34 | 5 | Implement jobs, batches, downloads and SSE routers | done | pending delivery hash |
+| DT-35 | 5 | Implement readiness and metrics; integration review and verification | done | pending delivery hash |
+
+### Stage 5 execution decomposition (2026-10-02)
+
+- **DT-32:** agent owns job service, internal API persistence helpers, retry
+  policy and focused tests; worker changes for retry budgets only.
+- **DT-33:** agent owns document service, documents router and focused tests.
+- **DT-34:** agent owns jobs router, SSE and API integration tests.
+- **DT-31 / DT-35:** orchestrator owns dependencies, app factory, catalogued
+  errors, health/metrics, integration review, documentation and delivery.
+
+Ruling: preserve approved REST schemas, core records, repository ports and DDL.
+SQL stays in persistence; service writes use injected transaction contexts.
+Use file-backed temporary SQLite for separate request connections and real WAL.
+Use the next sequential task IDs rather than the provisional IDs in the plan.
+Work on the stage-5-rest-api branch; preserve existing user changes.
+Implementers own disjoint files and do not commit or spawn agents.
+
+Stage 5 implementation and independent review are complete. Acceptance checks:
+`make test` — 302 passed, 1 live test deselected; `make lint` — clean (105 files
+formatted); `make typecheck` — clean (44 source files). The 29 added tests cover
+real PDF/DOCX uploads and FakeProvider output, multi-language idempotency races,
+partial enqueue recovery, fresh retry budgets with retained attempt costs after
+SQLite restart, download range errors, SSE termination/connection closure,
+readiness/metrics, 400-page and extracted-text boundaries, atomic rollback and
+cancellation-safe upload cleanup. Full threaded tests ran outside the sandbox;
+no live API calls were made. Two existing Pydantic register warnings remain.
+Independent review found and verified fixes for missing extraction limits and
+an orphaned-file race during cancellation. Operating limits, triage stub and
+initial cache-hit metric scope are in `docs/api.md`; execution rulings and the
+AI delegation/review log are in the Stage 5 plan. User changes remain excluded.
+Delivery uses one implementation commit followed by a task-hash backfill commit.
 
 ### Stage 4 execution decomposition (2026-10-02)
 

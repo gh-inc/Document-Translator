@@ -285,6 +285,8 @@ class SqliteJobExecutionRepository:
             if existing is not None:
                 return
 
+            await self._validate_new_job(job)
+
             if len(chunks) != job.total_chunks:
                 raise ValueError("job.total_chunks must equal the number of supplied chunks")
             chunk_ids = {chunk.id for chunk in chunks}
@@ -313,6 +315,9 @@ class SqliteJobExecutionRepository:
                 [(link.chunk_id, link.block_id, link.seq_in_chunk) for link in chunk_blocks],
             ):
                 pass
+
+    async def _validate_new_job(self, job: JobRecord) -> None:
+        """Adapter extension point for serialized aggregate preconditions."""
 
     async def _insert_job(self, job: JobRecord) -> None:
         async with self._connection.execute(

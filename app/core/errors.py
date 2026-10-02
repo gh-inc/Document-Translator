@@ -4,6 +4,15 @@ from enum import StrEnum
 
 
 class ErrorCode(StrEnum):
+    INTERNAL_ERROR = "internal_error"
+    INVALID_REQUEST = "invalid_request"
+    NOT_FOUND = "not_found"
+    CONFLICT = "conflict"
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    FILE_TOO_LARGE = "size_limit"
+    PAGE_LIMIT = "page_limit"
+    TEXT_LIMIT = "text_limit"
+    NOT_READY = "not_ready"
     SCANNED_PDF = "scanned_pdf"
     CORRUPT_FILE = "corrupt_file"
     RENDER_FAILED = "render_failed"
@@ -19,6 +28,15 @@ class ErrorCode(StrEnum):
 
 
 _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
+    ErrorCode.INTERNAL_ERROR: ("Internal server error", True),
+    ErrorCode.INVALID_REQUEST: ("Request validation failed", False),
+    ErrorCode.NOT_FOUND: ("Requested resource was not found", False),
+    ErrorCode.CONFLICT: ("Request conflicts with the resource state", False),
+    ErrorCode.UNSUPPORTED_FORMAT: ("Document format is unsupported", False),
+    ErrorCode.FILE_TOO_LARGE: ("Document exceeds the 50 MiB upload limit", False),
+    ErrorCode.PAGE_LIMIT: ("Document exceeds the 400-page limit", False),
+    ErrorCode.TEXT_LIMIT: ("Document exceeds the 10 MiB extracted-text limit", False),
+    ErrorCode.NOT_READY: ("Service dependencies are unavailable", True),
     ErrorCode.SCANNED_PDF: ("PDF has no usable text layer; OCR is unsupported", False),
     ErrorCode.CORRUPT_FILE: ("Document cannot be read or is corrupt", False),
     ErrorCode.RENDER_FAILED: ("Translated document could not be rendered", False),
@@ -35,6 +53,25 @@ _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
     ),
     ErrorCode.PROVIDER_REFUSAL: ("Translation provider refused the request", False),
 }
+
+
+def catalog_entry(error_code: str) -> tuple[str, bool]:
+    """Return a safe message and retry policy, including for unknown stored codes."""
+    try:
+        code = ErrorCode(error_code)
+    except ValueError:
+        code = ErrorCode.INTERNAL_ERROR
+    return _CATALOG[code]
+
+
+class ServiceError(Exception):
+    """A catalogued application failure with its outward HTTP classification."""
+
+    def __init__(self, error_code: ErrorCode, *, status_code: int = 422) -> None:
+        self.error_code = error_code
+        self.message, self.retryable = catalog_entry(error_code)
+        self.status_code = status_code
+        super().__init__(self.message)
 
 
 class DocumentError(Exception):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import math
 import time
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -95,7 +97,16 @@ class TranslationLoop:
             )
             return
 
-        remaining_attempts = self._settings.max_chunk_attempts - (first_attempt_no - 1)
+        policy = self._retry_policy(job)
+        baselines = policy.get("attempt_baselines", {})
+        baseline = baselines.get(chunk.id, 0) if isinstance(baselines, dict) else 0
+        if isinstance(baseline, bool) or not isinstance(baseline, int) or baseline < 0:
+            baseline = 0
+        max_attempts = policy.get("max_chunk_attempts", self._settings.max_chunk_attempts)
+        if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
+            max_attempts = self._settings.max_chunk_attempts
+        attempts_since_retry = max(0, (first_attempt_no - 1) - baseline)
+        remaining_attempts = max_attempts - attempts_since_retry
         if remaining_attempts <= 0:
             # A previous worker may have recorded its last retryable failure
             # and died before marking the chunk terminal.
@@ -293,9 +304,30 @@ class TranslationLoop:
     async def _reserve_cost(self, job: JobRecord, estimated_cost: float) -> None:
         async with self.cost_lock:
             self._initialize_cost(job)
-            if self.cost_usd + estimated_cost > self._settings.max_cost_per_job_usd:
+            policy_cap = self._retry_policy(job).get("max_cost_per_job_usd")
+            cap = self._settings.max_cost_per_job_usd
+            if (
+                isinstance(policy_cap, int | float)
+                and not isinstance(policy_cap, bool)
+                and math.isfinite(policy_cap)
+                and policy_cap >= cap
+            ):
+                cap = float(policy_cap)
+            if self.cost_usd + estimated_cost > cap:
                 raise ProviderError(ErrorCode.COST_CAP_EXCEEDED, model=job.model)
             self.cost_usd += estimated_cost
+
+    def _retry_policy(self, job: JobRecord) -> dict[str, object]:
+        if not job.error_detail:
+            return {}
+        try:
+            value = json.loads(job.error_detail)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        policy = value.get("_internal_retry_policy")
+        return policy if isinstance(policy, dict) and policy.get("version") == 1 else {}
 
     async def _settle_cost(self, reserved: float, actual: float | None) -> None:
         if actual is None:

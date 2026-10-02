@@ -308,7 +308,7 @@ Chunk:   pending ──claim──► inflight ──all blocks committed──�
 ## 6. Pipeline
 
 1. **Upload** — magic bytes (`%PDF-`, `PK\x03\x04`), extension whitelist,
-   size cap 50 MB, page cap 400, extracted-text cap; filename sanitized.
+   size cap 50 MiB, page cap 400, extracted UTF-8 text cap 10 MiB; filename sanitized.
    Stored at `/data/uploads/{document_id}`.
 2. **Extract (once per document)** — file → `list[Block]`; blocks (text +
    opaque `format_metadata`) persisted; the original file stays at
@@ -465,6 +465,18 @@ these terms; it is one of the brief's explicit questions.
 Errors are structured: `{error_code, message, retryable}` — never bare
 "Something went wrong".
 
+Stage 5 implements this surface through core document/job services. Uploads
+atomically persist extracted blocks and an English/general/neutral triage stub;
+the stub is replaced by real triage in a later stage. Request connections use
+the shared WAL factory and close after responses, including SSE termination.
+Idempotency checks run within aggregate insertion transactions, and partially
+created language batches can be completed by repeating the same request.
+Retries preserve cached work and billed attempts; internal retry budgets survive
+process restarts in the existing diagnostic field while no public error is set.
+Readiness currently checks DB and storage; worker freshness remains deferred.
+Metrics derive job counts and known cost/error totals from persistence;
+cache-hit recording remains deferred. See [REST operating notes](docs/api.md).
+
 ---
 
 ## 9. MCP server
@@ -507,7 +519,7 @@ getstark.co at implementation time). Three views:
 |---|---|
 | Corrupt PDF | Magic-byte + open failure → `corrupt_file`, HTTP 422, no job created |
 | Scanned PDF | No text layer → `scanned_pdf`, explains OCR is unsupported |
-| >400 pages / >50 MB | Rejected at upload: `page_limit` / `size_limit` |
+| >400 pages / >50 MiB | Rejected at upload: `page_limit` / `size_limit` |
 | Unsupported type | `unsupported_format` with the list of supported types |
 | Provider 429/5xx/timeout | Per-chunk retry, exp backoff + jitter, ≤4 attempts; exhausted → chunk fails, job continues → `completed_with_errors` |
 | Provider 400 / context length | Fatal for the chunk immediately (not retryable), surfaced distinctly |

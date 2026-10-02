@@ -1,0 +1,74 @@
+# REST API and SSE
+
+Run `make dev` for the FastAPI process on port 8000. Run
+`uv run python -m app.worker` separately with the same storage/database settings.
+For offline work, set `LLM_PROVIDER=fake`. Open `/docs` for the existing request
+and response schemas. Startup initializes SQLite WAL and the schema before the
+server accepts requests. Every request opens and closes its own configured
+connection; streaming requests retain their connection until the stream ends.
+
+## Upload and translate
+
+1. Upload a PDF or DOCX using multipart field `file` at `POST /api/documents`.
+   Limits are 50 MiB for uploads, 400 PDF pages and 10 MiB of extracted UTF-8 text. The response includes the document ID and block count.
+   Filenames are sanitized; suffix and signature must agree. Failed ingestion
+   rolls back database records and removes the saved upload.
+2. Send the document ID, target languages and a client-selected idempotency key
+   to `POST /api/jobs`:
+
+   ```json
+   {"document_id": "<document-id>", "target_languages": ["de", "fr"], "idempotency_key": "request-1"}
+   ```
+
+   The response contains one batch ID and one queued job per language. Repeating
+   the request returns the same persisted jobs. A conflicting reuse of the key
+   returns 409. Job creation groups whole blocks into about 1000-token chunks;
+   a single larger block occupies its own chunk. Each job aggregate is atomic.
+3. Poll `GET /api/jobs/{id}` or connect to `GET /api/jobs/{id}/events`.
+   SSE uses the existing `ServerSentEvent` JSON contract, polls once per second,
+   stops at terminal status and checks for client disconnects every iteration.
+   `GET /api/batches/{id}` returns the batch's jobs.
+4. Download via `GET /api/jobs/{id}/download` when status is `done` or
+   `completed_with_errors`. The latter may contain original text for blocks
+   whose translation failed. Other states return 409.
+
+Uploads currently persist a provisional analysis: English source language,
+general domain, neutral register, no terminology or warnings, and triage status
+`ok`. This is the Stage 5 stub, not language detection. Real triage follows in a
+later stage. Analysis terms, when supplied, are identity glossary entries until
+translated terminology is available.
+
+## Retry and costs
+
+`POST /api/jobs/{id}/retry` requeues terminal failed or partially completed jobs.
+It keeps successful translations and billed attempt history, resetting only
+chunks with missing translations. It grants a fresh attempt budget for those
+chunks. An active job/lease cannot be retried. The optional
+`raised_cost_cap_usd` must be finite and exceed the configured default cap and
+spend already recorded.
+
+Retry settings are stored internally in the existing `jobs.error_detail` field
+while `error_code` is empty. Workers read the raised cap and per-chunk attempt
+baselines across process restarts. This internal policy is never returned as a
+client error. Public records, repository ports and database schema are unchanged.
+Provider invocation remains at least once under ambiguous failures; all known
+billed usage remains counted. A download already obtained before retry may
+represent the earlier partial result; fetch again after the retry completes.
+
+## Errors and operations
+
+Errors use `{error_code, message, retryable}` from the shared catalog, including
+validation, missing routes/resources, provider and unexpected errors. Responses
+never include exception details or persisted diagnostic text.
+
+- `/healthz` returns 200 without dependency access.
+- `/readyz` checks database reachability and writability of upload/output
+  directories. Worker heartbeat freshness is deferred, as specified by Stage 5.
+- `/metrics` exports job counts per status and known provider cost/error totals
+  from durable data. Repeated scrapes do not accumulate totals again.
+  `cache_hits_total` is initialized to zero; durable cache-hit instrumentation
+  is deferred because the approved schema has no cache-hit record.
+
+Use `make test`, `make lint` and `make typecheck` for offline verification.
+API tests run against temporary file-backed SQLite databases with real WAL,
+separate request connections, real format adapters and `FakeProvider`.

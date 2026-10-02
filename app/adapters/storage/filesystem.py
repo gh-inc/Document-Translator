@@ -49,6 +49,22 @@ class FilesystemStorage(FileStorage):
             document_id,
         )
 
+    async def remove_upload(self, document_id: str) -> None:
+        """Remove an unpublished upload after ingestion fails (internal helper)."""
+        await asyncio.to_thread(self._remove_upload, document_id)
+
+    def _remove_upload(self, document_id: str) -> None:
+        _validate_component(document_id, "record ID")
+        with self._operation_lock:
+            directory = _contained_path(self._upload_base, document_id)
+            if directory.is_symlink():
+                raise ValueError("record directory must not be a symlink")
+            if not directory.exists():
+                return
+            for artifact in self._published_artifacts(self._upload_base, directory):
+                artifact.unlink()
+            directory.rmdir()
+
     async def save_output(
         self,
         job_id: str,
