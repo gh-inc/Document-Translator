@@ -55,10 +55,10 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-19 | 2 | Implement model token cost calculator | done | d8a610c |
 | DT-20 | 2 | Implement structured OpenAI provider and safe error mapping | done | d8a610c |
 | DT-21 | 2 | Verify provider contracts, integration, and Stage 2 delivery | done | d8a610c |
-| DT-22 | 3 | Implement threaded PDF extraction, rendering, and overflow fallback | done | pending delivery commit |
-| DT-23 | 3 | Implement paragraph-level DOCX extraction and style-preserving rendering | done | pending delivery commit |
-| DT-24 | 3 | Implement bounded format resolution and reproducible sample documents | done | pending delivery commit |
-| DT-25 | 3 | Verify format integration, opaque metadata, measurements, and delivery | done | pending delivery commit |
+| DT-22 | 3 | Implement threaded PDF extraction, rendering, and overflow fallback | done | 6e52e44 |
+| DT-23 | 3 | Implement paragraph-level DOCX extraction and style-preserving rendering | done | 6e52e44 |
+| DT-24 | 3 | Implement bounded format resolution and reproducible sample documents | done | 6e52e44 |
+| DT-25 | 3 | Verify format integration, opaque metadata, measurements, and delivery | done | 6e52e44 |
 
 ### Stage 3 execution decomposition (2026-10-02)
 
