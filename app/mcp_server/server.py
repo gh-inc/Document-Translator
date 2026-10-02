@@ -215,6 +215,10 @@ def _copy_output(root: Path, source: Path, job_id: str, output_dir: str) -> Path
                 _validate_destination(directory_fd, filename)
                 # Directory-relative replacement follows neither source nor
                 # destination symlinks, and publishes only the complete copy.
+                # Keep the temporary private throughout the copy, then make
+                # the completed artifact readable by the host user before the
+                # atomic publication.
+                os.fchmod(output.fileno(), 0o644)
                 os.replace(
                     temporary_name,
                     filename,

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import os
 import shutil
+import stat
 from pathlib import Path
 
 import pytest
@@ -83,7 +84,30 @@ def test_copy_output_treats_job_id_as_data(tmp_path: Path) -> None:
     result = _copy_output(root, source, "../../outside/arbitrary", "output")
     assert result.parent == root / "output"
     assert result.read_bytes() == b"translated"
+    assert stat.S_IMODE(result.stat().st_mode) == 0o644
     assert "/" not in result.name
+
+
+def test_copy_output_is_private_until_complete_and_published_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "shared"
+    root.mkdir()
+    source = tmp_path / "result.pdf"
+    source.write_bytes(b"translated")
+    temporary_modes: list[int] = []
+    original_copy = shutil.copyfileobj
+
+    def observe_private_copy(input_stream, output_stream, length=0):
+        temporary_modes.append(stat.S_IMODE(os.fstat(output_stream.fileno()).st_mode))
+        return original_copy(input_stream, output_stream, length)
+
+    monkeypatch.setattr(shutil, "copyfileobj", observe_private_copy)
+
+    result = _copy_output(root, source, "job", "output")
+
+    assert temporary_modes == [0o600]
+    assert stat.S_IMODE(result.stat().st_mode) == 0o644
 
 
 def test_temporary_symlink_swap_cannot_overwrite_outside_file(
