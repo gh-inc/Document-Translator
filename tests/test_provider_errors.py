@@ -33,3 +33,10 @@ def test_document_errors_use_safe_non_retryable_catalog(code: ErrorCode) -> None
     assert str(error) == error.message
     assert error.message
     assert error.retryable is False
+
+
+def test_cost_cap_error_is_catalogued_and_fatal() -> None:
+    error = ProviderError(ErrorCode.COST_CAP_EXCEEDED)
+    assert error.error_code == "cost_cap_exceeded"
+    assert error.message == "Job translation cost limit reached"
+    assert error.retryable is False

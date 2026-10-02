@@ -428,3 +428,64 @@ actual validation. No new public models, ports, or endpoints were introduced.
 native task delegation and repository tools executed its steps. Threaded I/O
 tests ran outside the tool sandbox after standard async tests stalled inside.
 Final verification and measurements are recorded in TASKS.md and DECISIONS.md.
+
+### 2026-10-02 — Stage 4 worker plan corrections
+
+**User request:** approve the Stage 4 implementation plan and provide strict
+corrections for the orchestrator.
+
+**Approved decisions and corrections:**
+
+1. **Single-job concurrency.** The worker processes exactly one job at a time.
+   Bounded parallelism (semaphore 8) applies only to chunks within the current
+   job. This prevents OOM and simplifies lease/heartbeat management.
+2. **Cache-driven assembly — reject in-memory `failed_block_ids`.** The worker
+   must not keep failed-block state in memory. After all chunks finish, assembly
+   reads the cache for the job's `translation_key`. Blocks without cached
+   translations are rendered as source text, and the job is marked
+   `COMPLETED_WITH_ERRORS` if any are missing. This survives `kill -9` because
+   the cache is the single source of completion truth.
+3. **No SQLite transaction across network calls.** `BEGIN ... COMMIT` must never
+   span an `LLMProvider.translate_chunk` call. The provider call runs outside
+   any DB transaction; only the result (cache writes, attempt records, state
+   updates) is persisted afterwards.
+4. **Soft cost cap with `asyncio.Lock`.** The worker uses an in-memory
+   `asyncio.Lock` to protect its local `cost_usd` accumulator while chunks under
+   the semaphore check the cap and add estimated costs. The cap is a soft limit;
+   the lock minimizes overshoot.
+
+**Result:** the approved plan was written to
+`docs/plans/2026-10-02-stage-4-worker.md` with all four rules embedded as
+explicit implementation requirements.
+
+### 2026-10-02 — Stage 4 worker orchestration and independent review
+
+**User request:** plan, decompose, delegate, implement, verify the Stage 4 plan,
+and commit the completed work.
+
+**Delegation:** separate agents owned settings/executor/assembly, translation,
+and claim loop/entrypoint/recovery tests. The orchestrator owned internal
+SQLite coordination, semantic cache keys, error catalog updates, documentation,
+acceptance checks, and commits. A separate reviewer inspected lease ownership,
+transactions, cancellation, cost accounting, and final assembly.
+
+**Rejected/corrected output:** stopped heartbeat-before-assembly ordering;
+successful attempt latency initially persisted as zero; terminal failure
+recording initially left a crash window before chunk completion; recovered
+chunks whose leases expired after startup were initially never released;
+entrypoint cleanup initially began after provider construction; a progress
+update was accidentally indented beneath a raising branch. Each issue was
+corrected before delivery. The reviewer's suggested job-renewal leak on chunk
+lease loss was disproved: the encompassing transaction rolls renewal back.
+
+**Scope:** approved public models, ports, and DDL remain unchanged. Real OpenAI
+calls are excluded from tests. The existing Stage 4 plan corrections above are
+preserved; unrelated user files are excluded from the worker delivery.
+
+**Final verification:** `make test` — 273 passed, 1 live test deselected;
+`make lint` — clean; `make typecheck` — clean (30 source files). Tests include
+real-format assembly, atomic rollback, concurrent cap reservations, an independent
+WAL writer during provider waits, heartbeat during rendering, SQLite reopen
+recovery, and an actual worker process stopped by SIGTERM after JSON readiness.
+The final test correction counts provider calls per chunk rather than per block.
+Two existing Pydantic warnings remain; no live calls were made.

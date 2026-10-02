@@ -59,6 +59,39 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-23 | 3 | Implement paragraph-level DOCX extraction and style-preserving rendering | done | 6e52e44 |
 | DT-24 | 3 | Implement bounded format resolution and reproducible sample documents | done | 6e52e44 |
 | DT-25 | 3 | Verify format integration, opaque metadata, measurements, and delivery | done | 6e52e44 |
+| DT-26 | 4 | Add worker settings and retry executor | done | pending delivery hash |
+| DT-27 | 4 | Implement single-job claim loop and lease heartbeats | done | pending delivery hash |
+| DT-28 | 4 | Implement atomic translation checkpoints and cost control | done | pending delivery hash |
+| DT-29 | 4 | Implement cache-driven PDF/DOCX assembly | done | pending delivery hash |
+| DT-30 | 4 | Wire worker process, verify recovery, review, and deliver | done | pending delivery hash |
+
+### Stage 4 execution decomposition (2026-10-02)
+
+- **DT-26 / DT-29:** agent owns settings, executor, assembly, and focused tests.
+- **DT-28:** agent owns translation loop and focused tests.
+- **DT-27 / DT-30:** agent owns claim loop, entrypoint, integration and resume tests.
+- Orchestrator owns internal persistence coordination, shared error catalog,
+  semantic cache key, integration review, documentation, checks, and commits.
+
+Existing public ports, domain models, and schema remain the approved contracts.
+Internal persistence helpers load chunk links/attempt numbers and serialize reads
+with writes on the worker connection. Provider calls and rendering run outside
+transactions. Heartbeats continue through assembly; restart releases expired
+chunk leases. Task IDs use the next available sequential numbers rather than
+the plan's provisional DT-31–DT-35. Existing user changes are preserved.
+
+Stage 4 implementation and independent review are complete. Acceptance checks:
+`make test` — 273 passed, 1 live test deselected; `make lint` — clean (86 files
+formatted); `make typecheck` — clean (30 source files). The 31 worker tests cover
+real PDF/DOCX output, checkpoint rollback, concurrent cost reservations, WAL
+writes during provider calls, retries and attempt usage, leases through slow
+assembly, restart after closing/reopening SQLite, assembling recovery, safe
+render errors, single-job graceful shutdown, and subprocess SIGTERM. Two
+additional persistence tests verify serialized worker reads and ownership.
+Threaded SQLite/I/O tests ran outside the sandbox; live calls were not run.
+The two existing Pydantic `register` warnings remain. Operating instructions
+and the bounded lease-loss delay are documented in `docs/worker.md`.
+Delivery uses one implementation commit followed by a task-hash backfill commit.
 
 ### Stage 3 execution decomposition (2026-10-02)
 

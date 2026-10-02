@@ -333,11 +333,25 @@ Chunk:   pending ──claim──► inflight ──all blocks committed──�
      `INSERT OR IGNORE` + one `chunk_attempts` row, **same transaction**;
    - retry: exponential backoff + jitter, ≤4 attempts on 429/5xx/timeout;
      400/context-length → fatal, chunk exhausts (job continues, §5.2);
-   - per-job **cost cap** (`MAX_COST_PER_JOB_USD`, default $2.00): crossing →
-     `failed(cost_cap_exceeded)`, committed work preserved.
+   - per-job **soft cost cap** (`MAX_COST_PER_JOB_USD`, default $2.00): a local
+     lock reserves estimated spend before each invocation. A rejected call
+     exhausts its chunk with `cost_cap_exceeded`; committed work is preserved.
+     Assembly derives `completed_with_errors` from missing cache rows, as
+     specified by the approved Stage 4 worker plan. Billed attempt usage is
+     persisted; unknown transport usage remains unknown.
 6. **Assemble & render** — the format's renderer re-opens the original file
    from `/data/uploads/{document_id}` and places each block's translation
    using its `format_metadata` → output file → final job status.
+
+Stage 4 processes one job at a time, with bounded chunk tasks within that job.
+An internal persistence coordinator serializes reads and short transactions on
+the worker connection; no provider call or rendering operation spans a database
+transaction. Checkpoints atomically persist cache entries, attempt accounting,
+chunk completion, and progress. Ownership is checked before checkpointing.
+Heartbeats renew job and active chunk leases, continuing through assembly.
+On cancellation, child tasks are cancelled and awaited; a new worker recovers
+expired leases and skips committed translations. SIGTERM/SIGINT stop new claims
+while the current job finishes.
 
 ** seam coherence without serialization:** terminology and register come from
 the persisted plan + glossary (identical for every chunk); local coherence

@@ -7,6 +7,7 @@ class ErrorCode(StrEnum):
     SCANNED_PDF = "scanned_pdf"
     CORRUPT_FILE = "corrupt_file"
     RENDER_FAILED = "render_failed"
+    COST_CAP_EXCEEDED = "cost_cap_exceeded"
     PROVIDER_TIMEOUT = "provider_timeout"
     PROVIDER_CONNECTION = "provider_connection"
     PROVIDER_RATE_LIMIT = "provider_rate_limit"
@@ -21,6 +22,7 @@ _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
     ErrorCode.SCANNED_PDF: ("PDF has no usable text layer; OCR is unsupported", False),
     ErrorCode.CORRUPT_FILE: ("Document cannot be read or is corrupt", False),
     ErrorCode.RENDER_FAILED: ("Translated document could not be rendered", False),
+    ErrorCode.COST_CAP_EXCEEDED: ("Job translation cost limit reached", False),
     ErrorCode.PROVIDER_TIMEOUT: ("Translation provider timed out", True),
     ErrorCode.PROVIDER_CONNECTION: ("Translation provider is unreachable", True),
     ErrorCode.PROVIDER_RATE_LIMIT: ("Translation provider rate limit reached", True),
