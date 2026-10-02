@@ -188,6 +188,15 @@ The contract:
 - **Adding a format in 10 minutes** = one module implementing both ports +
   one registry entry. DOCX is the proof the PDF design was not overfit.
 
+Core models reject unexpected top-level fields with `ConfigDict(extra="forbid")`.
+This strictness does not apply to nested keys in `Block.format_metadata`, whose
+`dict[str, Any]` contents remain opaque and survive serialization unchanged.
+Persistence record fields map one-to-one to their table columns: chunk-block
+membership lives in `ChunkBlockRecord`, never in `ChunkRecord`. Analysis ports
+return `DocumentAnalysisRecord` (including its persisted `created_at`), while
+triage and translation use the separate in-memory `TranslationPlan`.
+`AttemptOutcome` enumerates the persisted attempt outcomes.
+
 Rejected alternatives (full rationale in DECISIONS.md §3): a universal
 Document IR with normalized layout semantics, and a Markdown bridge
 (PDF → MD → translate → MD → PDF).
@@ -247,13 +256,14 @@ visible and the "what does one document cost" answer honest.
 ### 5.1 Guarantees (exactly what we do and do not promise)
 
 The enqueue port exposes only
-`create_job_with_chunks(job: JobRecord, chunks: list[ChunkRecord]) -> None`.
+`create_job_with_chunks(job: JobRecord, chunks: list[ChunkRecord],
+chunk_blocks: list[ChunkBlockRecord]) -> None`.
 A service initiates this aggregate write; the SQLite repository owns its one
-transaction and rolls back both the job and all chunks on failure. Separate
+transaction and rolls back the job, all chunks, and join rows on failure. Separate
 job/chunk creation methods and a Unit of Work abstraction are unnecessary for
-the MVP. Chunk-block membership is persisted within the same enqueue transaction
-when the concrete persistence stage implements the grouping described in
-“Pipeline”.
+the MVP. The explicit join-record argument keeps table records free of derived
+grouping data and includes chunk-block membership in the enqueue transaction
+described in “Pipeline”.
 
 Application startup explicitly initializes SQLite with `PRAGMA journal_mode=WAL`
 before accepting work. Every new connection executes `journal_mode=WAL`,

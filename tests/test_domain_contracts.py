@@ -10,8 +10,10 @@ from pydantic import ValidationError
 
 from app.core.models import (
     Block,
+    ChunkBlockRecord,
     ChunkRecord,
     ChunkRequest,
+    DocumentAnalysisRecord,
     DocumentIR,
     JobRecord,
     TranslationPlan,
@@ -132,7 +134,17 @@ def test_repository_ports_are_split_by_ownership() -> None:
     assert not public_methods[JobExecutionRepository] & public_methods[TranslationCacheRepository]
 
 
-def test_job_creation_port_is_one_aggregate_operation() -> None:
+def test_analysis_repository_ports_return_persisted_records() -> None:
+    save_analysis = DocumentRepository.save_analysis
+    get_analysis = DocumentRepository.get_analysis
+
+    assert inspect.iscoroutinefunction(save_analysis)
+    assert inspect.iscoroutinefunction(get_analysis)
+    assert get_type_hints(save_analysis)["return"] is DocumentAnalysisRecord
+    assert get_type_hints(get_analysis)["return"] == DocumentAnalysisRecord | None
+
+
+def test_job_creation_port_requires_chunk_blocks() -> None:
     methods = set(JobExecutionRepository.__dict__)
     assert "create_job_with_chunks" in methods
     assert "create_job" not in methods
@@ -141,10 +153,17 @@ def test_job_creation_port_is_one_aggregate_operation() -> None:
     method = JobExecutionRepository.create_job_with_chunks
     signature = inspect.signature(method)
     parameters = list(signature.parameters.values())
-    assert [parameter.name for parameter in parameters] == ["self", "job", "chunks"]
+    assert [parameter.name for parameter in parameters] == [
+        "self",
+        "job",
+        "chunks",
+        "chunk_blocks",
+    ]
+    assert parameters[3].default is inspect.Parameter.empty
     type_hints = get_type_hints(method)
     assert type_hints["job"] is JobRecord
     assert type_hints["chunks"] == list[ChunkRecord]
+    assert type_hints["chunk_blocks"] == list[ChunkBlockRecord]
     assert type_hints["return"] is type(None)
     assert inspect.iscoroutinefunction(method)
 

@@ -1,3 +1,138 @@
+# Core Ports Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Finalize `app/core/ports.py` so that `JobExecutionRepository.create_job_with_chunks` is the single aggregate enqueue operation and explicitly carries `chunk_blocks` for the join table.
+
+**Architecture:** Thin `Protocol` definitions in `app/core/ports.py`; no business logic. The persistence adapter owns the atomic transaction that writes `jobs`, `chunks`, and `chunk_blocks` together.
+
+**Tech Stack:** Python 3.12, `typing.Protocol`.
+
+**Status:** Implemented and validated under DT-8. The combined suite passes
+79 tests; `make lint` and `make typecheck` are clean.
+
+---
+
+## Task 1: Update `DocumentRepository.save_analysis` Return Type
+
+**Files:**
+- Modify: `app/core/ports.py`
+
+Change return type from `None` to `DocumentAnalysisRecord` so the adapter can return the persisted record (including `created_at` from the database).
+
+**Step 1: Update the signature**
+
+```python
+async def save_analysis(
+    self,
+    document_id: str,
+    plan: TranslationPlan,
+) -> DocumentAnalysisRecord: ...
+```
+
+**Step 2: Verify imports**
+
+Ensure `DocumentAnalysisRecord` is imported in `app/core/ports.py`.
+
+---
+
+## Task 2: Adopt Option A for Aggregate Job Creation
+
+**Files:**
+- Modify: `app/core/ports.py`
+- Modify: `tests/test_domain_contracts.py`
+
+Add a third parameter `chunk_blocks: list[ChunkBlockRecord]` to `JobExecutionRepository.create_job_with_chunks`. Update contract tests to enforce the new signature and continue rejecting separate `create_job` / `create_chunks` methods.
+
+**Step 1: Write the failing contract test**
+
+```python
+def test_job_creation_port_requires_chunk_blocks() -> None:
+    import inspect
+    from typing import get_type_hints
+
+    method = JobExecutionRepository.create_job_with_chunks
+    signature = inspect.signature(method)
+    params = list(signature.parameters.values())
+    assert [p.name for p in params] == ["self", "job", "chunks", "chunk_blocks"]
+
+    hints = get_type_hints(method)
+    assert hints["job"] is JobRecord
+    assert hints["chunks"] == list[ChunkRecord]
+    assert hints["chunk_blocks"] == list[ChunkBlockRecord]
+    assert hints["return"] is type(None)
+    assert "create_job" not in JobExecutionRepository.__dict__
+    assert "create_chunks" not in JobExecutionRepository.__dict__
+```
+
+Run: `pytest tests/test_domain_contracts.py::test_job_creation_port_requires_chunk_blocks -v`
+Expected: FAIL before implementation.
+
+**Step 2: Update the port signature**
+
+```python
+async def create_job_with_chunks(
+    self,
+    job: JobRecord,
+    chunks: list[ChunkRecord],
+    chunk_blocks: list[ChunkBlockRecord],
+) -> None: ...
+```
+
+Document in the docstring that the adapter writes `jobs`, `chunks`, and `chunk_blocks` in one transaction and rolls back on any failure.
+
+**Step 3: Run tests**
+
+Run: `pytest tests/test_domain_contracts.py -v`
+Expected: PASS
+
+---
+
+## Task 3: Ensure Repository Boundaries Stay Clean
+
+**Files:**
+- Modify: `tests/test_domain_contracts.py`
+
+Confirm that `DocumentRepository`, `JobExecutionRepository`, and `TranslationCacheRepository` still have no overlapping public method sets.
+
+Run: `pytest tests/test_domain_contracts.py::test_repository_ports_are_split_by_ownership -v`
+Expected: PASS
+
+---
+
+## Task 4: Run Full Verification
+
+```bash
+make test
+make lint
+make typecheck
+```
+
+Expected: all green.
+
+---
+
+## Task 5: Commit
+
+```bash
+git add app/core/ports.py tests/test_domain_contracts.py
+git commit -m "DT-8: feat(core): finalize repository ports with aggregate job creation"
+```
+
+---
+
+## Final Code for `app/core/ports.py`
+
+**Execution notes:** DT-8 implements the final code's analysis return types,
+including `get_analysis -> DocumentAnalysisRecord | None`, and the required
+`chunk_blocks` argument without a default. Contract tests in
+`tests/test_domain_contracts.py` check both analysis methods, coroutine and type
+signatures, and repository separation. Atomic persistence remains an obligation
+for the later repository implementation. The main agent coordinates this task
+with the available collaboration tools because `superpowers:executing-plans`
+is unavailable.
+
+```python
 """Interfaces implemented by application adapters."""
 
 from datetime import datetime
@@ -84,7 +219,7 @@ class JobExecutionRepository(Protocol):
         chunks: list[ChunkRecord],
         chunk_blocks: list[ChunkBlockRecord],
     ) -> None:
-        """Persist a job, its chunks, and their block links atomically.
+        """Persist a job and its chunks atomically.
 
         The persistence implementation writes the job, its chunks, and the
         ``chunk_blocks`` join rows in a single transaction and rolls back the
@@ -202,3 +337,4 @@ class FormatRegistry(Protocol):
         self,
         file_path: Path,
     ) -> tuple[DocumentExtractor, DocumentRenderer] | None: ...
+```
