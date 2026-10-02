@@ -45,8 +45,14 @@ structlog · uv. Exact versions live in `uv.lock`. Add dependencies ONLY via
 9. **Async discipline.** Async all the way on I/O paths. No blocking calls
    (`requests`, `time.sleep`, sync `sqlite3`) inside async code. CPU-bound
    work (PDF rendering) goes through `asyncio.to_thread`.
-10. **Git.** Conventional commits. Never commit unless explicitly asked.
-    Never amend or force-push.
+10. **Git & task log.** Commit messages follow `CONTRIBUTING.md` exactly:
+    `DT-<N>: <type>(<scope>): <short description>`. Ticket IDs come from
+    `TASKS.md` — the repo-local backlog you maintain: before starting work,
+    decompose the current stage into numbered tasks or pick the next
+    `todo`; mark it `in-progress`; on completion mark it `done` and
+    backfill commit hashes. Never commit unless explicitly asked. Never
+    amend, rebase, or force-push — those are human PR-preparation
+    activities (CONTRIBUTING.md, Clean History Rules).
 
 ## Commands
 
