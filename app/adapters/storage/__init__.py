@@ -1,0 +1,1 @@
+"""File storage adapter package."""
