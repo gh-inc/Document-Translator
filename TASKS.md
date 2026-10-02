@@ -80,17 +80,17 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-45 | 7 | Add job tools and protocol/worker end-to-end tests | done | efcc377 |
 | DT-46 | 7 | Document, review, verify and deliver Stage 7 | done | efcc377 |
 
-| DT-47 | 8 | Scaffold React TypeScript Vite frontend | done | — |
-| DT-48 | 8 | Add typed API client and safe error mapping | done | — |
-| DT-49 | 8 | Expose document readiness through service and REST | done | — |
-| DT-50 | 8 | Implement validated upload and readiness submission | done | — |
-| DT-51 | 8 | Implement batch job SSE retry and download views | done | — |
-| DT-52 | 8 | Implement recent job history and filters | done | — |
-| DT-53 | 8 | Apply local Stark branding and accessible layout | done | — |
-| DT-54 | 8 | Serve frontend with API-safe 404 SPA fallback | done | — |
-| DT-55 | 8 | Document two-terminal frontend workflow | done | — |
-| DT-56 | 8 | Verify Stage 8 integration and acceptance | done | — |
-| DT-57 | 8 | Review and deliver Stage 8 with commit records | done | — |
+| DT-47 | 8 | Scaffold React TypeScript Vite frontend | done | 17b079c |
+| DT-48 | 8 | Add typed API client and safe error mapping | done | 17b079c |
+| DT-49 | 8 | Expose document readiness through service and REST | done | 17b079c |
+| DT-50 | 8 | Implement validated upload and readiness submission | done | 17b079c |
+| DT-51 | 8 | Implement batch job SSE retry and download views | done | 17b079c |
+| DT-52 | 8 | Implement recent job history and filters | done | 17b079c |
+| DT-53 | 8 | Apply local Stark branding and accessible layout | done | 17b079c |
+| DT-54 | 8 | Serve frontend with API-safe 404 SPA fallback | done | 17b079c |
+| DT-55 | 8 | Document two-terminal frontend workflow | done | 17b079c |
+| DT-56 | 8 | Verify Stage 8 integration and acceptance | done | 17b079c |
+| DT-57 | 8 | Review and deliver Stage 8 with commit records | done | 17b079c |
 
 ### Stage 7 execution decomposition (2026-10-02)
 

@@ -55,3 +55,5 @@ Browser evidence: `/tmp/document-translator-stage8-e2e-4Y9jXa/result.json` and s
 - Final Chromium HTTP/1.1 capacity probe: **PASS**, five checks with eight active jobs. Maximum four streams, ordinary GET available, all cards receive status/progress/cost, terminal completion promotes a waiting job, and navigation cancels streams/polling. No browser errors. Probe: `/tmp/document-translator-stage8-sse-capacity.mjs`.
 
 Final independent review found one Important issue: aggregate SSE connection starvation. One consolidated correction and scoped re-review closed it, with no new Important/Critical regressions. All task reviews and the final integration gate passed. Delivery hashes are recorded in TASKS.md; the branch remains `stage-8-frontend`. Completion checks were repeated on 2026-10-03 without real provider calls.
+
+Delivery commit: `17b079c` — `DT-57: feat(frontend): deliver Stage 8 translation interface`. All eleven tickets reference this verified delivery; a separate docs commit backfills the task log.
