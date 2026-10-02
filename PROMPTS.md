@@ -340,3 +340,29 @@ thread-backed filesystem I/O, so acceptance tests were rerun with authorized
 execution outside the sandbox using real connections and threads. No live LLM
 calls were made. Separate commits cover DT-11–DT-15; unrelated existing changes
 are excluded.
+
+### 2026-10-02 — Stage 2 LLM provider plan corrections
+
+**User request:** approve the Stage 2 implementation plan subject to four
+important corrections before handing it to the orchestrator.
+
+**Approved corrections:**
+
+1. **Source-side context in `ChunkRequest`.** Approved adding optional
+   `context_before: list[Block]` and `context_after: list[Block]` to
+   `ChunkRequest` so the provider can include neighboring source blocks in the
+   prompt without returning translations for them.
+2. **OpenAI Structured Outputs.** The agent must use OpenAI Structured Outputs
+   (`client.beta.chat.completions.parse` with a Pydantic schema, or
+   `response_format={"type": "json_schema"}`) instead of free-form JSON mode.
+   This prevents hallucinated or missing translation keys.
+3. **Tiktoken encoder caching.** `tiktoken.encoding_for_model` must not be
+called per chunk. The encoder is initialized once at module or class level and
+reused across calls.
+4. **Missing block validation.** `OpenAIProvider` must verify that every
+   `block.id` from the requested chunk is present in the model response. Any
+   missing block is treated as a **retryable** error.
+
+**Result:** the approved plan was written to
+`docs/plans/2026-10-02-stage-2-llm-provider.md` with the four corrections
+embedded as explicit agent reminders and implementation requirements.

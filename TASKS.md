@@ -50,11 +50,11 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-14 | 1 | Implement async filesystem storage with contained artifact paths | done | 7790553 |
 | DT-15 | 1 | Validate persistence integration and record execution corrections | done | 0758d5e |
 | DT-16 | 0 | Add requirements traceability section to ARCHITECTURE.md | done | 5391a80 |
-| DT-17 | 2 | Extend ChunkRequest with approved source-side context | done | pending delivery hash |
-| DT-18 | 2 | Implement FakeProvider and validated provider settings | done | pending delivery hash |
-| DT-19 | 2 | Implement model token cost calculator | done | pending delivery hash |
-| DT-20 | 2 | Implement structured OpenAI provider and safe error mapping | done | pending delivery hash |
-| DT-21 | 2 | Verify provider contracts, integration, and Stage 2 delivery | done | pending delivery hash |
+| DT-17 | 2 | Extend ChunkRequest with approved source-side context | done | d8a610c |
+| DT-18 | 2 | Implement FakeProvider and validated provider settings | done | d8a610c |
+| DT-19 | 2 | Implement model token cost calculator | done | d8a610c |
+| DT-20 | 2 | Implement structured OpenAI provider and safe error mapping | done | d8a610c |
+| DT-21 | 2 | Verify provider contracts, integration, and Stage 2 delivery | done | d8a610c |
 
 ### Stage 2 execution decomposition (2026-10-02)
 
