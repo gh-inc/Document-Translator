@@ -246,6 +246,20 @@ visible and the "what does one document cost" answer honest.
 
 ### 5.1 Guarantees (exactly what we do and do not promise)
 
+The enqueue port exposes only
+`create_job_with_chunks(job: JobRecord, chunks: list[ChunkRecord]) -> None`.
+A service initiates this aggregate write; the SQLite repository owns its one
+transaction and rolls back both the job and all chunks on failure. Separate
+job/chunk creation methods and a Unit of Work abstraction are unnecessary for
+the MVP. Chunk-block membership is persisted within the same enqueue transaction
+when the concrete persistence stage implements the grouping described in
+“Pipeline”.
+
+Application startup explicitly initializes SQLite with `PRAGMA journal_mode=WAL`
+before accepting work. Every new connection executes `journal_mode=WAL`,
+`synchronous=NORMAL`, `foreign_keys=ON`, and `busy_timeout=20000` (20 seconds);
+connection setup and SQL live in the persistence adapter.
+
 | Boundary | Guarantee | Mechanism |
 |---|---|---|
 | Enqueue | Idempotent | `idempotency_key` UNIQUE; job+chunks written in one transaction |

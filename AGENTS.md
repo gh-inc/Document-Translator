@@ -16,8 +16,12 @@ structlog · uv. Exact versions live in `uv.lock`. Add dependencies ONLY via
 
 1. **Database.** Every SQLite connection: `PRAGMA journal_mode=WAL`,
    `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=20000`
-   (milliseconds = 20 s). Writes happen only inside service-layer
-   transactions. SQL lives exclusively in `app/adapters/persistence/`.
+   (milliseconds = 20 s). Application startup explicitly initializes WAL
+   before accepting work. Services initiate writes. The aggregate
+   `create_job_with_chunks` repository operation owns one atomic transaction
+   and rolls back the job and all chunks on failure; other writes happen
+   inside service-layer transactions. SQL lives exclusively in
+   `app/adapters/persistence/`.
 2. **Opaque Metadata.** The core pipeline handles only `seq` +
    `source_text`. Never parse, inspect, or transform `format_metadata`
    outside the format adapter that owns it (`adapters/formats/pdf.py`,
