@@ -412,3 +412,43 @@ is a coarse information-preservation proxy, not a translation-quality verdict.
 The output-token cost dominates only the measured bulk spend. No fake-provider
 output is used for any figure in this section. Provider prices may differ from
 the adapter's recorded pricing snapshot.
+
+---
+
+## 10. Decision record: worker liveness in readiness
+
+**Context.** `/readyz` must answer "is this deployment able to serve work?"
+Stage 5 deliberately checked only database and storage reachability and deferred
+worker freshness. This stage closes that gap.
+
+**Evaluated alternatives.**
+
+1. **Dedicated `worker_heartbeats` table or marker file.**
+   - *Pros:* Explicit, direct signal per worker instance.
+   - *Cons:* New schema and a new write path on every heartbeat; would require
+     the worker to write outside its existing lease protocol. Useful only when
+     many workers must be balanced or killed individually.
+2. **Stale-lease heuristic over existing chunk state — CHOSEN.**
+   - *Pros:* Uses state the worker already maintains through its lease
+     protocol. No schema change, no new write path, no extra configuration.
+   - *Cons:* Indirect signal rather than a direct heartbeat.
+
+**Mechanism.** Readiness runs a bounded query over `chunks` for rows still
+`inflight` whose `lease_expires_at` is older than a grace period exceeding
+`CHUNK_LEASE_SECONDS` (120 s against a 60 s default). A non-zero result means no
+worker has renewed those leases and the deployment reports 503 with the
+catalogued `not_ready` envelope.
+
+**Stated limitations.** An idle deployment with no in-flight chunks reports
+ready, so absence of evidence is not proof of a live worker. A chunk that is
+genuinely slow or whose process is paused past its lease is reported as not ready
+until it recovers. Both are properties of an indirect signal and are documented
+rather than hidden.
+
+**Chaos verification without new instrumentation.** Restart-under-chaos is
+verified from durable state using the `sqlite3` CLI against `chunk_attempts`,
+`block_translations`, and `chunks`, rather than by adding invocation logging to
+`FakeProvider`. Because a chunk killed while `inflight` has no committed
+translation and is re-executed by design, attempt rows may increase for exactly
+that chunk. The guaranteed invariant is that committed translations are never
+re-requested and never duplicated.

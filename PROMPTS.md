@@ -689,3 +689,50 @@ MCP returned a completed download owned by container UID 10001 with mode 0600,
 so the host could not open it. DT-65 corrects final publication permissions
 while keeping the temporary copy private and the rename atomic.
 Existing user-authored files/approval notes are preserved outside these commits.
+
+### 2026-10-02 — Stage 9 end-to-end plan rulings
+
+**User review:** the draft plan proposed a `FAKE_INVOCATION_LOG` on disk, was
+unsure about spending money on live provider runs, and re-opened the worker
+heartbeat question that was already settled. All three were corrected.
+
+**Approved rulings:**
+
+1. **No provider instrumentation for chaos.** `FakeProvider` stays clean. The
+   chaos script proves recovery with the `sqlite3` CLI against the durable tables
+   that already exist: `chunk_attempts`, `block_translations`, and `chunks`.
+   Counters are captured before the kill and after completion.
+2. **Stateless worker-liveness heuristic in `/readyz`.** No heartbeat table and
+   no marker files. Readiness returns 503 when chunks remain `inflight` with a
+   `lease_expires_at` older than the 120 s grace period. An idle system reports
+   ready; that limitation is documented rather than hidden.
+3. **Live measurements are mandatory.** `scripts/measure_quality.py` and the
+   final `DECISIONS.md` numbers must come from one real OpenAI run. CI and the
+   automated suite keep using `FakeProvider`. Unmeasured figures are written as
+   "not measured" with a reason, never invented.
+
+**Pushback recorded — validated and endorsed by the reviewer.** The ruling
+"the attempt count must not increase" was corrected: a chunk killed while
+`inflight` has no committed translation and is re-executed by design, so
+`chunk_attempts` grows for exactly that chunk. The provable invariant is that
+already-committed translations are never re-requested and that
+`block_translations` never gains duplicates. The reviewer confirmed this is the
+only correct reading: exactly-once for committed business results,
+at-least-once for provider invocations under an ambiguous failure. The script
+prints both numbers and labels which guarantee each one demonstrates.
+
+**Final approvals:**
+- Installing the `sqlite3` CLI in the production image is approved as a
+  deliberate compromise for this assessment; verification speed outweighs a
+  minimal image surface here.
+- The fail-loudly rule for `scripts/measure_quality.py` is confirmed: it must
+  exit non-zero under `LLM_PROVIDER=fake` so an offline run can never be
+  mistaken for a measurement.
+- Documenting the `/readyz` heuristic limitations is approved as written.
+
+**Implementation note.** `python:*-slim` does not ship the `sqlite3` CLI, so the
+approved verification approach requires installing it in the runtime image.
+
+**Result:** the plan is in
+`docs/plans/2026-10-02-stage-9-e2e-chaos-observability.md`; the readiness
+decision is recorded in `DECISIONS.md` §10.

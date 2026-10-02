@@ -96,9 +96,9 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-59 | 9 | Prove durable restart recovery with Compose chaos script | done | 52c280d |
 | DT-60 | 9 | Add stale-chunk worker-aware readiness | done | aa2b9d6 |
 | DT-61 | 9 | Implement live quality and cost measurement command | done | 1969f27 |
-| DT-62 | 9 | Record real measurements or explicit measurement gaps | done | — |
-| DT-63 | 9 | Document operator runbook and offline frontend CI | done | — |
-| DT-64 | 9 | Review Stage 9, verify acceptance and deliver commits | done | — |
+| DT-62 | 9 | Record real measurements or explicit measurement gaps | done | 8edd4ad |
+| DT-63 | 9 | Document operator runbook and offline frontend CI | done | 8edd4ad |
+| DT-64 | 9 | Review Stage 9, verify acceptance and deliver commits | done | 8edd4ad |
 | DT-65 | 9 | Publish MCP downloads readable by the host from non-root containers | done | d1a4809 |
 
 ### Stage 9 execution decomposition (2026-10-03)
