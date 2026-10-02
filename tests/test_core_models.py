@@ -69,6 +69,8 @@ MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
             "plan": PLAN_DATA,
             "glossary": {"colour": "Farbe"},
             "model": "test-model",
+            "context_before": [{**BLOCK_DATA, "id": "before"}],
+            "context_after": [{**BLOCK_DATA, "id": "after"}],
         },
     ),
     (
@@ -245,3 +247,25 @@ def test_job_record_glossary_default_is_independent_per_instance() -> None:
 
     assert first.glossary == {"colour": "Farbe"}
     assert second.glossary == {}
+
+
+def test_chunk_request_roundtrips_context_blocks() -> None:
+    data = dict(dict(MODEL_FIXTURES)[ChunkRequest])
+    data["context_before"] = [{**BLOCK_DATA, "id": "before"}]
+    data["context_after"] = [{**BLOCK_DATA, "id": "after"}]
+    instance = ChunkRequest.model_validate(data)
+    assert ChunkRequest.model_validate_json(instance.model_dump_json()) == instance
+    assert instance.context_before[0].id == "before"
+    assert instance.context_after[0].id == "after"
+
+
+def test_chunk_request_context_defaults_are_independent() -> None:
+    data = dict(dict(MODEL_FIXTURES)[ChunkRequest])
+    data.pop("context_before", None)
+    data.pop("context_after", None)
+    first = ChunkRequest.model_validate(data)
+    second = ChunkRequest.model_validate(data)
+    first.context_before.append(Block.model_validate(BLOCK_DATA))
+    first.context_after.append(Block.model_validate(BLOCK_DATA))
+    assert second.context_before == []
+    assert second.context_after == []

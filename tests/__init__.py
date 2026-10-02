@@ -1,0 +1,1 @@
+"""Document Translator tests."""

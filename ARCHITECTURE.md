@@ -376,6 +376,20 @@ class LLMProvider(Protocol):
   resume, chaos — runs without spending a cent.** A `@pytest.mark.live`
   suite against the real API is opt-in.
 
+Stage 2 adapters implement this port. `ChunkRequest.context_before` and
+`context_after` default to independent empty lists and carry source blocks only.
+The OpenAI wire schema is a strict list of block-ID/text pairs, converted into
+the existing `ChunkResult.translations` mapping after validating the exact
+requested ID set and rejecting duplicates. Context blocks and opaque metadata
+are never returned as translations or interpreted by the provider.
+
+Provider failures use the safe catalog in `core/errors.py`. Retry decisions are
+independent of SDK exceptions; known usage remains attached to invalid-response
+errors for future attempt accounting. Usage after an ambiguous transport failure
+is unknown. SDK automatic retries are disabled: the worker owns retries and
+records each attempt. `ModelCostCalculator` uses the Stage 2 plan's explicit
+pricing snapshot; changes to provider prices require a table update.
+
 **Where the agent earns its keep — triage.** The document is unknown; someone
 must look inside it with tools (`get_text_sample`, `detect_language`,
 `classify_domain`, `extract_terminology`) and make a judgment shaping all

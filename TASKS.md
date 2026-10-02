@@ -50,6 +50,33 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-14 | 1 | Implement async filesystem storage with contained artifact paths | done | 7790553 |
 | DT-15 | 1 | Validate persistence integration and record execution corrections | done | 0758d5e |
 | DT-16 | 0 | Add requirements traceability section to ARCHITECTURE.md | done | 5391a80 |
+| DT-17 | 2 | Extend ChunkRequest with approved source-side context | done | pending delivery hash |
+| DT-18 | 2 | Implement FakeProvider and validated provider settings | done | pending delivery hash |
+| DT-19 | 2 | Implement model token cost calculator | done | pending delivery hash |
+| DT-20 | 2 | Implement structured OpenAI provider and safe error mapping | done | pending delivery hash |
+| DT-21 | 2 | Verify provider contracts, integration, and Stage 2 delivery | done | pending delivery hash |
+
+### Stage 2 execution decomposition (2026-10-02)
+
+- **DT-17:** approved context fields and model roundtrip/default tests; orchestrator owns core models.
+- **DT-18:** FakeProvider, Settings, environment example, and focused tests; delegated ownership.
+- **DT-19:** pricing implementation and focused tests; delegated ownership.
+- **DT-20:** OpenAI adapter, offline transport tests and opt-in live contract test; delegated ownership.
+- **DT-21:** shared provider error catalog, reusable port test-kit, independent review,
+  documentation, full acceptance checks, commits, and hash backfills; orchestrator owns integration.
+
+Agents work in disjoint files. Core context and errors are supplied first;
+SDK source inspection precedes implementation. Real API tests remain opt-in.
+
+Stage 2 is implemented and independently reviewed. Acceptance checks:
+`make test` — 205 passed, 1 live test deselected; `make lint` — clean;
+`make typecheck` — clean (20 source files). Pytest excludes live tests by default;
+explicit `-m live` selects the shared OpenAI port contract. Live calls were not
+run. Tests requiring real threads ran outside the tool sandbox. The two existing
+Pydantic `register` warnings remain. Implementation is delivered as one combined
+Stage 2 commit, as allowed by the approved plan, followed by hash backfills.
+Review findings and the AI delegation log are in
+`docs/plans/2026-10-02-stage-2-llm-provider-execution.md`.
 
 ### Stage 1 execution decomposition (2026-10-02)
 

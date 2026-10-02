@@ -82,6 +82,8 @@ class ChunkRequest(BaseModel):
     plan: TranslationPlan
     glossary: dict[str, str] = Field(default_factory=dict)
     model: str
+    context_before: list[Block] = Field(default_factory=list)
+    context_after: list[Block] = Field(default_factory=list)
 
 
 class ChunkResult(BaseModel):
