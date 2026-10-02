@@ -1,0 +1,81 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["web"]
+    environment: &app_environment
+      DATABASE_PATH: /data/app.db
+      UPLOAD_STORAGE_PATH: /data/uploads
+      OUTPUT_STORAGE_PATH: /data/out
+      MCP_SHARED_DIR: /mcp-files
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      FAKE_FAIL_RATE: ${FAKE_FAIL_RATE:-0.0}
+      FAKE_LATENCY_MS: ${FAKE_LATENCY_MS:-0}
+      FAKE_FAIL_MODE: ${FAKE_FAIL_MODE:-timeout}
+      MAX_COST_PER_JOB_USD: ${MAX_COST_PER_JOB_USD:-2.00}
+      MAX_CHUNK_CONCURRENCY: ${MAX_CHUNK_CONCURRENCY:-8}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-60}
+      CHUNK_LEASE_SECONDS: ${CHUNK_LEASE_SECONDS:-60}
+      HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-10}
+      MAX_CHUNK_ATTEMPTS: ${MAX_CHUNK_ATTEMPTS:-4}
+      MCP_TRIAGE_POLL_INTERVAL_SECONDS: ${MCP_TRIAGE_POLL_INTERVAL_SECONDS:-0.1}
+      MCP_TRIAGE_TIMEOUT_SECONDS: ${MCP_TRIAGE_TIMEOUT_SECONDS:-45}
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes: &app_volumes
+      - app-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 6
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["worker"]
+    environment: *app_environment
+    volumes: *app_volumes
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["mcp"]
+    environment: *app_environment
+    ports:
+      - "${MCP_PORT:-8001}:8001"
+    volumes:
+      - app-data:/data
+      - "${MCP_HOST_SHARED_DIR:-./mcp-files}:/mcp-files:rw"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'code=$$(curl --max-time 2 --silent --show-error --output /dev/null --write-out "%{http_code}" -H "Accept: text/event-stream" http://127.0.0.1:8001/mcp || true); [ "$$code" = "200" ] || [ "$$code" = "400" ]'
+      interval: 10s
+      timeout: 4s
+      start_period: 30s
+      retries: 6
+
+volumes:
+  app-data:
