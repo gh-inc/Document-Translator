@@ -59,11 +59,11 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-23 | 3 | Implement paragraph-level DOCX extraction and style-preserving rendering | done | 6e52e44 |
 | DT-24 | 3 | Implement bounded format resolution and reproducible sample documents | done | 6e52e44 |
 | DT-25 | 3 | Verify format integration, opaque metadata, measurements, and delivery | done | 6e52e44 |
-| DT-26 | 4 | Add worker settings and retry executor | done | pending delivery hash |
-| DT-27 | 4 | Implement single-job claim loop and lease heartbeats | done | pending delivery hash |
-| DT-28 | 4 | Implement atomic translation checkpoints and cost control | done | pending delivery hash |
-| DT-29 | 4 | Implement cache-driven PDF/DOCX assembly | done | pending delivery hash |
-| DT-30 | 4 | Wire worker process, verify recovery, review, and deliver | done | pending delivery hash |
+| DT-26 | 4 | Add worker settings and retry executor | done | 2e17801 |
+| DT-27 | 4 | Implement single-job claim loop and lease heartbeats | done | 2e17801 |
+| DT-28 | 4 | Implement atomic translation checkpoints and cost control | done | 2e17801 |
+| DT-29 | 4 | Implement cache-driven PDF/DOCX assembly | done | 2e17801 |
+| DT-30 | 4 | Wire worker process, verify recovery, review, and deliver | done | 2e17801 |
 
 ### Stage 4 execution decomposition (2026-10-02)
 
