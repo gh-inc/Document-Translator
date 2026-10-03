@@ -1,0 +1,269 @@
+{
+  "comparison": [
+    {
+      "chrf": 71.36983507634552,
+      "cost_per_million_mixed_tokens_usd": 0.13004385964912282,
+      "known_estimated_run_cost_usd": 0.0040917,
+      "known_tokens_in": 29766,
+      "known_tokens_out": 1698,
+      "model": "gpt-4o-mini",
+      "preservation_percent": 73.6842105263158,
+      "recorded_bulk_requests": 1
+    },
+    {
+      "chrf": 70.83564043997426,
+      "cost_per_million_mixed_tokens_usd": 4.492145662263478,
+      "known_estimated_run_cost_usd": 0.025165,
+      "known_tokens_in": 4114,
+      "known_tokens_out": 1488,
+      "model": "gpt-4o",
+      "preservation_percent": 73.6842105263158,
+      "recorded_bulk_requests": 1
+    }
+  ],
+  "notes": [
+    "Cost is the application estimate for provider-reported bulk and triage usage; ambiguous or unrecorded usage is excluded, so this is not a billing total.",
+    "Cost per million is observed known cost divided by all reported input and output tokens combined, multiplied by 1,000,000; it is not a provider price tier.",
+    "Requests counts recorded bulk chunk attempts only. Triage request counts are not persisted and are excluded; glossary lookup makes no provider requests."
+  ],
+  "reports": [
+    {
+      "jobs": [
+        {
+          "attempt_cost_usd": 0.0010245,
+          "attempt_count": 1,
+          "attempt_outcomes": {
+            "ok": 1
+          },
+          "attempt_tokens_in": 1538,
+          "attempt_tokens_out": 1323,
+          "block_count": 20,
+          "chunk_attempt_latencies_ms": [
+            18085
+          ],
+          "cost_usd": 0.0010245,
+          "created_at": "2026-10-03T19:12:19.658619+00:00",
+          "document_id": "c2a3da050c7b42ddb854653bac7c1c76b1cba7489c3cfa5f4da3f1b345a521be",
+          "done_chunks": 1,
+          "job_id": "1b9473b6-4cd3-441f-9bd4-da4ac3542fb2",
+          "job_latency_ms": 18690,
+          "model": "gpt-4o-mini",
+          "p95_chunk_attempt_latency_ms": 18085,
+          "phase": "source_to_target",
+          "retry_attempt_count": 0,
+          "retry_cost_share_percent": 0.0,
+          "retry_cost_usd": 0,
+          "status": "done",
+          "target_language": "de",
+          "tokens_in": 1538,
+          "tokens_out": 1323,
+          "total_chunks": 1,
+          "updated_at": "2026-10-03T19:12:38.348408+00:00"
+        }
+      ],
+      "measurement": {
+        "date_utc": "2026-10-03",
+        "detected_source_language": "en",
+        "elapsed_seconds": 38.670206,
+        "finished_at": "2026-10-03T19:12:38.587586+00:00",
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "sample_filename": "dt92-golden-en.docx",
+        "sample_sha256": "c2a3da050c7b42ddb854653bac7c1c76b1cba7489c3cfa5f4da3f1b345a521be",
+        "source_block_count": 20,
+        "started_at": "2026-10-03T19:11:59.917380+00:00",
+        "target_language": "de"
+      },
+      "measurement_exclusions": [
+        "The legacy usage field covers bulk jobs only; persisted triage usage is included separately in pipeline_usage.",
+        "Chunk latency p95 uses persisted provider-attempt latency_ms rows, including retries.",
+        "Job latency is persisted updated_at minus created_at; one run does not establish a meaningful p95.",
+        "Quality and preservation metrics cover extracted text; DOCX tables and other unsupported text regions are excluded."
+      ],
+      "number_placeholder_preservation": {
+        "currency": {
+          "preservation_percent": 0.0,
+          "preserved_count": 0,
+          "source_count": 4
+        },
+        "date": {
+          "preservation_percent": 100.0,
+          "preserved_count": 2,
+          "source_count": 2
+        },
+        "number": {
+          "preservation_percent": 90.9090909090909,
+          "preserved_count": 10,
+          "source_count": 11
+        },
+        "placeholder": {
+          "preservation_percent": 100.0,
+          "preserved_count": 2,
+          "source_count": 2
+        },
+        "preservation_percent": 73.6842105263158,
+        "preserved_token_count": 14,
+        "source_token_count": 19
+      },
+      "pipeline_usage": {
+        "bulk_estimated_cost_usd": 0.0010245,
+        "bulk_tokens_in": 1538,
+        "bulk_tokens_out": 1323,
+        "known_estimated_cost_usd": 0.0040917,
+        "known_tokens_in": 29766,
+        "known_tokens_out": 1698,
+        "recorded_bulk_attempts": 1,
+        "triage_estimated_cost_usd": 0.0030672,
+        "triage_request_count": null,
+        "triage_tokens_in": 28228,
+        "triage_tokens_out": 375
+      },
+      "quality": {
+        "beta": 2,
+        "case_sensitive": true,
+        "character_ngram_orders": "1-6",
+        "effective_order": true,
+        "metric": "chrF",
+        "mode": "reference",
+        "order_averaging": "mean precision and recall by effective n-gram order",
+        "scale": "0-100",
+        "score": 71.36983507634552,
+        "segmentation": "document text stream, blocks joined with newlines",
+        "whitespace": "excluded"
+      },
+      "usage": {
+        "attempt_cost_usd": 0.0010245,
+        "attempt_count": 1,
+        "cost_usd": 0.0010245,
+        "job_count": 1,
+        "job_latency_note": "p95 omitted: fewer than 20 comparable job observations; see per-job latency.",
+        "p95_chunk_attempt_latency_ms": 18085,
+        "p95_job_latency_ms": null,
+        "retry_attempt_count": 0,
+        "retry_cost_share_percent": 0.0,
+        "retry_cost_usd": 0.0,
+        "tokens_in": 1538,
+        "tokens_out": 1323
+      }
+    },
+    {
+      "jobs": [
+        {
+          "attempt_cost_usd": 0.0169725,
+          "attempt_count": 1,
+          "attempt_outcomes": {
+            "ok": 1
+          },
+          "attempt_tokens_in": 1525,
+          "attempt_tokens_out": 1316,
+          "block_count": 20,
+          "chunk_attempt_latencies_ms": [
+            7386
+          ],
+          "cost_usd": 0.0169725,
+          "created_at": "2026-10-03T19:12:42.399340+00:00",
+          "document_id": "c2a3da050c7b42ddb854653bac7c1c76b1cba7489c3cfa5f4da3f1b345a521be",
+          "done_chunks": 1,
+          "job_id": "60f33e93-bd37-4941-bd2d-83ad550e383f",
+          "job_latency_ms": 7748,
+          "model": "gpt-4o",
+          "p95_chunk_attempt_latency_ms": 7386,
+          "phase": "source_to_target",
+          "retry_attempt_count": 0,
+          "retry_cost_share_percent": 0.0,
+          "retry_cost_usd": 0,
+          "status": "done",
+          "target_language": "de",
+          "tokens_in": 1525,
+          "tokens_out": 1316,
+          "total_chunks": 1,
+          "updated_at": "2026-10-03T19:12:50.147243+00:00"
+        }
+      ],
+      "measurement": {
+        "date_utc": "2026-10-03",
+        "detected_source_language": "en",
+        "elapsed_seconds": 11.661354,
+        "finished_at": "2026-10-03T19:12:50.268283+00:00",
+        "model": "gpt-4o",
+        "provider": "openai",
+        "sample_filename": "dt92-golden-en.docx",
+        "sample_sha256": "c2a3da050c7b42ddb854653bac7c1c76b1cba7489c3cfa5f4da3f1b345a521be",
+        "source_block_count": 20,
+        "started_at": "2026-10-03T19:12:38.606929+00:00",
+        "target_language": "de"
+      },
+      "measurement_exclusions": [
+        "The legacy usage field covers bulk jobs only; persisted triage usage is included separately in pipeline_usage.",
+        "Chunk latency p95 uses persisted provider-attempt latency_ms rows, including retries.",
+        "Job latency is persisted updated_at minus created_at; one run does not establish a meaningful p95.",
+        "Quality and preservation metrics cover extracted text; DOCX tables and other unsupported text regions are excluded."
+      ],
+      "number_placeholder_preservation": {
+        "currency": {
+          "preservation_percent": 0.0,
+          "preserved_count": 0,
+          "source_count": 4
+        },
+        "date": {
+          "preservation_percent": 100.0,
+          "preserved_count": 2,
+          "source_count": 2
+        },
+        "number": {
+          "preservation_percent": 90.9090909090909,
+          "preserved_count": 10,
+          "source_count": 11
+        },
+        "placeholder": {
+          "preservation_percent": 100.0,
+          "preserved_count": 2,
+          "source_count": 2
+        },
+        "preservation_percent": 73.6842105263158,
+        "preserved_token_count": 14,
+        "source_token_count": 19
+      },
+      "pipeline_usage": {
+        "bulk_estimated_cost_usd": 0.0169725,
+        "bulk_tokens_in": 1525,
+        "bulk_tokens_out": 1316,
+        "known_estimated_cost_usd": 0.025165,
+        "known_tokens_in": 4114,
+        "known_tokens_out": 1488,
+        "recorded_bulk_attempts": 1,
+        "triage_estimated_cost_usd": 0.0081925,
+        "triage_request_count": null,
+        "triage_tokens_in": 2589,
+        "triage_tokens_out": 172
+      },
+      "quality": {
+        "beta": 2,
+        "case_sensitive": true,
+        "character_ngram_orders": "1-6",
+        "effective_order": true,
+        "metric": "chrF",
+        "mode": "reference",
+        "order_averaging": "mean precision and recall by effective n-gram order",
+        "scale": "0-100",
+        "score": 70.83564043997426,
+        "segmentation": "document text stream, blocks joined with newlines",
+        "whitespace": "excluded"
+      },
+      "usage": {
+        "attempt_cost_usd": 0.0169725,
+        "attempt_count": 1,
+        "cost_usd": 0.0169725,
+        "job_count": 1,
+        "job_latency_note": "p95 omitted: fewer than 20 comparable job observations; see per-job latency.",
+        "p95_chunk_attempt_latency_ms": 7386,
+        "p95_job_latency_ms": null,
+        "retry_attempt_count": 0,
+        "retry_cost_share_percent": 0.0,
+        "retry_cost_usd": 0.0,
+        "tokens_in": 1525,
+        "tokens_out": 1316
+      }
+    }
+  ]
+}

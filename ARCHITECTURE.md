@@ -75,11 +75,23 @@ translator workflows, or review/approval chains.
 
 ### 1.3 Quality metric (one, honest, measured)
 
-Back-translation **chrF** on a fixed sample document: translate EN→DE, then
-DE→EN with the same pipeline, compare against the original (reference-based).
-We use it as a **coarse automated proxy for information preservation and
-pipeline consistency — not as a direct translation-quality metric** — and
-report the number in DECISIONS.md.
+**chrF** is computed by the standard-library-only `app/core/quality.py`,
+with unit tests pinning character n-gram orders 1–6, beta=2, effective-order
+averaging, and whitespace exclusion. Number, date, currency and placeholder
+preservation compares exact literal multisets, counting repeated occurrences.
+
+The reference baseline uses a licensed 20-pair FLORES-200 EN-DE devtest subset,
+with disclosed identical synthetic literal suffixes for preservation coverage.
+`measure_quality --models` compares models using the same reference and a fresh
+private database/cache per model. This is a narrow extracted-text comparison,
+not a representative corpus score or a document-fidelity benchmark; synthetic
+suffixes can slightly inflate chrF. Provenance and CC BY-SA terms are in
+[samples/golden_dataset.md](samples/golden_dataset.md); measured results are in
+DECISIONS.md.
+
+Without a supplied reference, the same CLI runs back-translation EN→DE→EN and
+labels it as a coarse proxy for pipeline consistency and information retention,
+not direct translation quality. Both modes retain their explicit scope.
 
 ---
 
@@ -96,7 +108,7 @@ report the number in DECISIONS.md.
 | 7 | Frontend | React + Vite + TS SPA, built to static, served by FastAPI | htmx: weaker signal for a full-stack role |
 | 8 | Formats | PDF (PyMuPDF) + DOCX (python-docx) + Markdown via the **Opaque Metadata** pattern — the core sees only text + seq | Normalized layout IR: over-engineering; Markdown bridge: fatal layout loss (DECISIONS.md §3) |
 | 9 | Datastore | SQLite WAL on a shared volume | Postgres: extra service, no payoff at this scale (§15) |
-| 10 | Default model | `gpt-4o-mini` (env-configurable) | Flagship by default: cost without measured quality need — full record in DECISIONS.md §2 |
+| 10 | Default model | `gpt-4o-mini` (env-configurable) | A small reference baseline compares both models; it does not justify changing the deployment default — DECISIONS.md |
 | 11 | Parallel context | **Source-side only** (plan + glossary + neighboring source blocks) | Previous-chunk *translation* = serial dependency chain, kills parallelism |
 
 ---
@@ -828,7 +840,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | **Engineering fundamentals — failure handling** | Failure matrix covering corrupt, scanned, oversized, provider errors, crashes | §11 |
 | **Engineering fundamentals — tests** | Unit, contract, integration, chaos, regression pins | §12 |
 | **Engineering fundamentals — observability** | Structured logs, Prometheus `/metrics`, `/healthz`, `/readyz`, 3 a.m. runbook | §13 |
-| **Product judgment — quality metric** | Back-translation chrF reported as an honest proxy; Stage 9 also supports supplied-reference chrF and number/placeholder preservation | §1.3, §14 |
+| **Product judgment — quality metric** | Tested core chrF and literal preservation, published-reference two-model baseline, and explicitly labelled back-translation proxy | §1.3, §14 |
 | **AI leverage** | `PROMPTS.md` logs delegation, rejection, and correction | §16 |
 | **UX — Stark branding** | React UI using the verified starkfuture.com palette and a local wordmark SVG | §10 |
 | **UX — clear feedback during translation** | SSE progress stream, live cost, explicit error states | §8, §10 |
@@ -845,7 +857,7 @@ future quality-metric pass:
 - Horizontal worker scaling — single worker + bounded concurrency is
   sufficient for the assessment workload.
 - Side-by-side preview / in-place editing — cut for time.
-- A fixed reference corpus for FLORES-style evaluation remains deferred.
-  Stage 9 tooling supports supplied-reference chrF and rendered-text
-  number/placeholder preservation; without a reference, it reports
+- A large representative reference corpus, tables and long-document fidelity
+  remain deferred. The committed 20-pair FLORES-200 sample provides a narrow
+  reference baseline; without a supplied reference, the CLI reports
   back-translation chrF as a proxy. Live figures require real credentials.

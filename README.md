@@ -271,7 +271,7 @@ process environment; they do not automatically load `.env`. Compose loads
 | `./scripts/chaos-restart.sh` | Isolated fake-provider Compose run that kills and restarts a worker, then checks durable recovery | Docker Engine, Compose, and available local ports; builds/starts its own services; no key |
 | `docker compose config --quiet` | Compose configuration validation without printing resolved settings or starting containers | Docker Compose CLI; no Docker daemon, key, or running services |
 | `docker build .` | Build the production image | Docker Engine; may need network access to fetch base images/dependencies; no key or running services |
-| `uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env` | Live-only quality and cost measurement through the real pipeline; optionally add `--reference PATH` or `--target-language fr` | `LLM_PROVIDER=openai`, OpenAI key in the selected environment file, network access, and API charges; no Docker or running services |
+| `uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env` | Live-only quality and cost measurement through the real pipeline; optionally add `--reference PATH`, `--models gpt-4o-mini,gpt-4o`, or `--target-language fr` | `LLM_PROVIDER=openai`, OpenAI key in the selected environment file, network access, and API charges; no Docker or running services |
 | `git status --short` | Check for remaining working-tree changes | Git repository; no key, Docker, or running services |
 | `git log --oneline -5` | Inspect recent delivery history | Git repository; no key, Docker, or running services |
 | `curl -fsS http://localhost:8000/healthz` and `curl -fsS http://localhost:8000/readyz` | Check Compose web liveness and readiness | Web service running on port 8000; no OpenAI key with the fake provider |
@@ -289,6 +289,27 @@ information-preservation proxy. Persisted bulk attempt cost excludes triage; doc
 separately with cached-aware pricing. Unknown transport usage remains excluded; one job duration cannot establish a population p95 or
 a parallelism comparison. Measurements and gaps are recorded in
 [DECISIONS.md](DECISIONS.md).
+
+For the licensed reference sample, convert its English lines to a temporary
+DOCX and compare models through the same command:
+
+```bash
+uv run python - <<'PY'
+from pathlib import Path
+from docx import Document
+sample = Document()
+for line in Path("samples/golden_en.txt").read_text(encoding="utf-8").splitlines():
+    sample.add_paragraph(line)
+sample.save("/tmp/golden_en.docx")
+PY
+uv run python -m scripts.measure_quality /tmp/golden_en.docx --reference samples/golden_de_ref.txt --models gpt-4o-mini,gpt-4o --env-file .env
+```
+
+Each model gets a fresh temporary database and cache. JSON goes to stdout;
+Markdown goes to stderr and labels the quality mode. Matrix cost includes
+known bulk and triage usage estimates; request counts cover recorded bulk
+attempts only. Corpus provenance, licence and synthetic literal adaptations
+are documented in [golden_dataset.md](samples/golden_dataset.md).
 
 ## 3 a.m. runbook
 

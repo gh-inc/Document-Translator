@@ -136,6 +136,8 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-91 | 11 | Content-address translation cache, plan isolation, durable counters and UI | done | 3f9fff4 |
 
+| DT-92 | 11 | Extract quality metrics, source licensed corpus and measure two-model benchmark | done | pending delivery hash |
+
 ### MCP download error mapping execution (2026-10-03)
 
 DT-90 fixes the operational download error classification defect. Delegated
@@ -474,3 +476,17 @@ provider calls or push. Pre-existing user edits are excluded from delivery.
 The execution record includes ownership, plan corrections, red/green regression
 proof, migration behavior, and measured agent token accounting.
 See [DT-91 execution](docs/plans/2026-10-03-content-addressed-translation-cache-execution.md).
+
+### Benchmark matrix execution (2026-10-03)
+
+DT-92 extracts stdlib-only tested quality metrics, commits a licensed and
+reproducible adapted FLORES-200 reference subset, and extends measure_quality
+with isolated per-model runs. Separate agents owned metrics, corpus and CLI;
+root owned integration/live measurement/docs, with independent review.
+Final offline suite: 624 passed, 2 live tests deselected; backend typecheck
+passed (61 source files). Two real two-model runs retain variability and
+known bulk+triage costs, with request-count exclusions stated. No model winner
+is claimed. Live final chrF: mini 71.3698, 4o 70.8356; both preserve 14/19
+literal tokens. Local providers and fidelity benchmarking remain deferred.
+Unrelated user changes stay excluded from commits.
+See [execution record](docs/plans/2026-10-03-benchmark-matrix-execution.md).

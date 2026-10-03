@@ -341,6 +341,12 @@ files have fixed metadata and reproduce byte-for-byte in tests.
    coherence (the rejected §6 mechanism, reintroduced as an optional
    post-pass where serialization is acceptable).
 
+7. **Local model provider (Ollama / GGUF).** Deferred beyond the three-day
+   assessment. A local quantized model could exercise real prompt/schema
+   adherence between FakeProvider and paid OpenAI runs, catching integration
+   failures without provider charges. It would require its own LLMProvider
+   adapter, model/runtime setup and validation; it is not implemented here.
+
 ---
 
 ## 8. Decision record: MCP adapter and filesystem boundary
@@ -447,7 +453,7 @@ uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env -
 | Back-translation chrF | 85.2706 / 100 | Case-sensitive chrF β=2, orders 1–6, effective-order means, whitespace excluded |
 | Number/Placeholder Preservation | 100% (5/5) | Forward rendered text, strict literal multiset comparison; all five tokens are numbers |
 | Dates / currency / placeholders | not measured | The fixed sample contains none of these tokens; the command reports null for empty categories |
-| Supplied-reference chrF | not measured | No independent German reference was supplied |
+| Supplied-reference chrF | 71.3698 (gpt-4o-mini), 70.8356 (gpt-4o) / 100 | DT-92 adapted 20-pair FLORES-200 reference run below; historical Stage 9 had no supplied reference |
 | Triage-inclusive recorded expense per document | Sum of job costs + one document triage cumulative cost | Available for newly instrumented runs; historical Stage 9 triage was not recorded and cannot be reconstructed |
 | Exact provider invoice total | unknown | Ambiguous or uncheckpointed usage may be unavailable; application prices are estimates |
 
@@ -578,3 +584,57 @@ embedding/fuzzy matching (not exact semantic reuse), neighbour-hashed keys
 will be recorded in the execution record. No live repeat-cost comparison is
 claimed; cache hits skip bulk provider calls but do not prove total billing
 savings or remove independent triage/glossary work.
+
+## Reference-based model benchmark (2026-10-03)
+
+Measured EN→DE with the same 20-pair FLORES-200 `devtest` subset for
+`gpt-4o-mini` and `gpt-4o`, via DOCX extraction/translation/rendering. German
+prose was copied from the official corpus. Sentence IDs, hashes, CC BY-SA 4.0
+attribution and identical synthetic literal suffixes are documented in
+[samples/golden_dataset.md](samples/golden_dataset.md).
+The tested core metrics retain the existing chrF conventions. These scores
+compare document text streams, not the full FLORES corpus or an official
+sentence-segmented leaderboard implementation.
+
+Final matrix (UTC starts 19:11:59 and 19:12:38):
+
+Quality mode: reference
+
+| Model | Cost / 1M tokens in+out (USD) | Known run cost (USD) | chrF | Preservation % | Recorded bulk requests | Tokens in / out |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| gpt-4o-mini | $0.1300 | $0.004092 | 71.37 | 73.68% | 1 | 29766 / 1698 |
+| gpt-4o | $4.4921 | $0.025165 | 70.84 | 73.68% | 1 | 4114 / 1488 |
+
+- Cost is the application estimate for provider-reported bulk and triage usage; ambiguous or unrecorded usage is excluded, so this is not a billing total.
+- Cost per million is observed known cost divided by all reported input and output tokens combined, multiplied by 1,000,000; it is not a provider price tier.
+- Requests counts recorded bulk chunk attempts only. Triage request counts are not persisted and are excluded; glossary lookup makes no provider requests.
+
+[Final JSON](docs/measurements/2026-10-03-flores-en-de-matrix.json) and
+[standalone matrix](docs/measurements/2026-10-03-flores-en-de-matrix.md) retain
+per-model/per-job evidence. README gives reproduction commands. Each model
+used a private database/cache with the same DOCX bytes and reference;
+provider-side cached input may affect triage cost. ModelCostCalculator supplies
+the application price snapshot. Mixed-token unit cost is the observed weighted
+estimate, not a new provider rate. Unknown/uncheckpointed usage is excluded.
+
+Final literal preservation was 14/19 for both models: placeholders 2/2, dates
+2/2, currencies 0/4, numbers 10/11. Strict literal matching can penalize locale
+formatting even when numeric meaning survives; it is not semantic correctness.
+The suffixes provide synthetic field coverage and may slightly inflate chrF.
+Short prose does not test realistic fields, tables, long documents, PDF reflow
+or fallback pages. Population p95 and before/after parallelism stay unmeasured.
+
+The first live run preceded two report-label fixes. Its untouched
+[pilot JSON](docs/measurements/2026-10-03-flores-en-de-matrix-pilot.json) is retained:
+mini chrF 69.8404, preservation 14/19, known cost $0.00399165;
+4o chrF 72.8010, preservation 19/19, known cost $0.02498500.
+The pilot's unqualified nested exclusion line refers to bulk-only `usage`;
+`pipeline_usage` includes triage. Final CLI wording scopes that line and labels
+reference versus back-translation mode. No formulas, prompts or numeric
+accounting changed between runs. Score ordering reverses, so this tiny baseline
+does not justify a model winner or a deployment-default change.
+
+Four model measurement runs recorded $0.05823335 in known service usage estimates;
+the final matrix alone totals $0.02925670. These are application estimates,
+not provider invoice totals. Agent build-token accounting remains separate in
+the DT-92 execution record. Local Ollama/GGUF is deferred in Future Work.

@@ -115,6 +115,87 @@ async def test_offline_measurement_runs_upload_triage_worker_render_and_metrics(
     assert "DOCX tables" in report["measurement_exclusions"][-1]
 
 
+async def test_model_matrix_runs_isolated_pipelines_and_reports_known_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document_path = tmp_path / "sample.docx"
+    document = Document()
+    document.add_paragraph("Invoice {{id}} dated 2024-12-31 costs $12.50.")
+    document.save(document_path)
+    reference_path = tmp_path / "reference.txt"
+    reference_path.write_text("Invoice {{id}} dated 2024-12-31 costs $12.50.", encoding="utf-8")
+    guarded: list[str] = []
+    database_paths: list[Path] = []
+    real_create_app = measure_quality.create_app
+
+    def record_app(settings: Settings, *, frontend_dir: Path) -> object:
+        database_paths.append(settings.database_path)
+        return real_create_app(settings, frontend_dir=frontend_dir)
+
+    monkeypatch.setattr(measure_quality, "create_app", record_app)
+    monkeypatch.setattr(
+        measure_quality,
+        "require_live_provider",
+        lambda settings: guarded.append(settings.openai_model),
+    )
+    monkeypatch.setattr(fake_provider, "_count_usage_sync", lambda _input, _output: (10, 4))
+    settings = Settings(llm_provider="fake", fake_latency_ms=1)
+    args = Namespace(
+        document=document_path,
+        target_language="de",
+        reference=reference_path,
+        timeout=10.0,
+        models="gpt-4o-mini,gpt-4o",
+    )
+
+    matrix = await measure_quality.measure_models(args, settings)
+
+    assert guarded == ["gpt-4o-mini", "gpt-4o"]
+    assert len(database_paths) == len(set(database_paths)) == 2
+    reports = matrix["reports"]
+    rows = matrix["comparison"]
+    assert isinstance(reports, list)
+    assert isinstance(rows, list)
+    assert [row["model"] for row in rows] == guarded
+    assert reports[0]["jobs"][0]["job_id"] != reports[1]["jobs"][0]["job_id"]
+    for report, row in zip(reports, rows, strict=True):
+        usage = report["pipeline_usage"]
+        assert "triage usage is included separately" in report["measurement_exclusions"][0]
+        assert usage["known_estimated_cost_usd"] == pytest.approx(
+            usage["bulk_estimated_cost_usd"] + usage["triage_estimated_cost_usd"]
+        )
+        assert row["known_tokens_in"] == usage["known_tokens_in"]
+        assert row["known_tokens_out"] == usage["known_tokens_out"]
+        assert row["recorded_bulk_requests"] == usage["recorded_bulk_attempts"]
+        assert usage["triage_request_count"] is None
+        assert row["cost_per_million_mixed_tokens_usd"] == pytest.approx(
+            row["known_estimated_run_cost_usd"]
+            * 1_000_000
+            / (row["known_tokens_in"] + row["known_tokens_out"])
+        )
+
+
+@pytest.mark.parametrize(
+    "models", ["", ",", "gpt-4o-mini,", ",gpt-4o", "gpt-4o-mini,gpt-4o-mini", "unknown"]
+)
+async def test_model_list_is_rejected_before_a_run_or_cost(
+    models: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    async def fail_if_measured(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal called
+        called = True
+        raise AssertionError("measurement should not run")
+
+    monkeypatch.setattr(measure_quality, "measure", fail_if_measured)
+    with pytest.raises(MeasurementError, match="--models"):
+        await measure_quality.measure_models(
+            Namespace(models=models), Settings(llm_provider="fake")
+        )
+    assert not called
+
+
 def test_human_report_and_json_payload_can_be_emitted_on_separate_streams(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -157,6 +238,62 @@ def test_human_report_and_json_payload_can_be_emitted_on_separate_streams(
     assert "71.25 / 100" in output.err
 
 
+def test_matrix_cli_emits_json_and_markdown_with_truthful_request_label(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    matrix: dict[str, object] = {
+        "comparison": [
+            {
+                "model": "gpt-4o-mini",
+                "cost_per_million_mixed_tokens_usd": 0.25,
+                "known_estimated_run_cost_usd": 0.00025,
+                "known_tokens_in": 800,
+                "known_tokens_out": 200,
+                "chrf": 71.25,
+                "preservation_percent": None,
+                "recorded_bulk_requests": 3,
+            }
+        ],
+        "reports": [{"quality": {"mode": "reference"}}],
+        "notes": ["Triage request counts are not persisted."],
+    }
+    monkeypatch.setattr(measure_quality, "build_parser", lambda: _ArgsParser(models="gpt-4o-mini"))
+    monkeypatch.setattr(measure_quality, "Settings", lambda **_kwargs: Settings())
+
+    def return_matrix(awaitable: object) -> dict[str, object]:
+        awaitable.close()  # type: ignore[attr-defined]
+        return matrix
+
+    monkeypatch.setattr(measure_quality.asyncio, "run", return_matrix)
+
+    assert measure_quality.main() == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == matrix
+    assert "| Model | Cost / 1M tokens in+out (USD)" in output.err
+    assert "Quality mode: reference" in output.err
+    assert "Recorded bulk requests" in output.err
+    assert "| gpt-4o-mini | $0.2500 | $0.000250 | 71.25 | n/a | 3 | 800 / 200 |" in output.err
+
+
+def test_failed_matrix_emits_no_scores_or_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(measure_quality, "build_parser", lambda: _ArgsParser(models="gpt-4o"))
+    monkeypatch.setattr(measure_quality, "Settings", lambda **_kwargs: Settings())
+
+    def fail(awaitable: object) -> dict[str, object]:
+        awaitable.close()  # type: ignore[attr-defined]
+        raise MeasurementError("second model failed")
+
+    monkeypatch.setattr(measure_quality.asyncio, "run", fail)
+
+    assert measure_quality.main() == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "second model failed" in output.err
+    assert "chrF" not in output.err
+
+
 def test_cli_exits_nonzero_with_explicit_fake_provider_message(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -175,6 +312,9 @@ def test_cli_exits_nonzero_with_explicit_fake_provider_message(
 
 
 class _ArgsParser:
+    def __init__(self, models: str | None = None) -> None:
+        self.models = models
+
     def parse_args(self) -> Namespace:
         return Namespace(
             env_file=None,
@@ -182,4 +322,5 @@ class _ArgsParser:
             target_language="de",
             reference=None,
             timeout=1.0,
+            models=self.models,
         )

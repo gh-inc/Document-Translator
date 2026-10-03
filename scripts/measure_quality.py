@@ -13,10 +13,8 @@ import asyncio
 import hashlib
 import json
 import math
-import re
 import sys
 import tempfile
-from collections import Counter
 from collections.abc import Sequence
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
@@ -30,112 +28,19 @@ from pydantic import ValidationError
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
+from app.adapters.llm.pricing import ModelCostCalculator
 from app.adapters.persistence.database import SqliteConnectionFactory
 from app.adapters.persistence.measurements import MeasurementPersistence
 from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.api.main import create_app
 from app.config import Settings
 from app.core.models import Block, DocumentAnalysisRecord
+from app.core.quality import chrf_score, preservation_metrics
 from app.worker.__main__ import run_worker
 
 
 class MeasurementError(RuntimeError):
     """A safe, user-facing error raised by this explicit measurement command."""
-
-
-_PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|%s|\[[^\[\]]*\]")
-_DATE_RE = re.compile(
-    r"(?<!\w)(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})(?!\w)"
-)
-_CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|CNY|INR|UAH|PLN|SEK|NOK|DKK"
-_CURRENCY_RE = re.compile(
-    rf"(?<!\w)(?:(?:[$€£¥]\s*|(?:{_CURRENCY_CODES})\s*)[-+]?\d[\d.,]*"
-    rf"|[-+]?\d[\d.,]*\s*(?:[$€£¥]|(?:{_CURRENCY_CODES})))(?!\w)",
-    re.IGNORECASE,
-)
-_NUMBER_RE = re.compile(
-    r"(?<![\w])[-+]?\d+(?:[.,]\d+)*(?:\s?%)(?!\w)|(?<![\w])[-+]?\d+(?:[.,]\d+)*(?!\w)"
-)
-_TOKEN_RE = re.compile(
-    rf"(?P<placeholder>{_PLACEHOLDER_RE.pattern})"
-    rf"|(?P<date>{_DATE_RE.pattern})"
-    rf"|(?P<currency>{_CURRENCY_RE.pattern})"
-    rf"|(?P<number>{_NUMBER_RE.pattern})",
-    re.IGNORECASE,
-)
-
-
-def chrf_score(candidate: str, reference: str, *, beta: int = 2, max_order: int = 6) -> float:
-    """Return corpus-style chrF on a 0..100 scale, excluding whitespace.
-
-    This implements character n-gram orders 1 through 6 with the standard
-    chrF beta=2 weighting. It is intentionally a compact single-reference
-    implementation for the measurement command, not a replacement for a
-    general-purpose metric library.
-    """
-    if beta <= 0 or max_order <= 0:
-        raise ValueError("beta and max_order must be positive")
-    predicted = "".join(candidate.split())
-    expected = "".join(reference.split())
-    order_precisions: list[float] = []
-    order_recalls: list[float] = []
-    for order in range(1, max_order + 1):
-        predicted_ngrams = Counter(
-            predicted[index : index + order] for index in range(max(0, len(predicted) - order + 1))
-        )
-        expected_ngrams = Counter(
-            expected[index : index + order] for index in range(max(0, len(expected) - order + 1))
-        )
-        predicted_total = sum(predicted_ngrams.values())
-        expected_total = sum(expected_ngrams.values())
-        if predicted_total and expected_total:
-            matched = sum((predicted_ngrams & expected_ngrams).values())
-            order_precisions.append(matched / predicted_total)
-            order_recalls.append(matched / expected_total)
-    if not order_precisions:
-        return 0.0
-    precision = sum(order_precisions) / len(order_precisions)
-    recall = sum(order_recalls) / len(order_recalls)
-    beta_squared = beta**2
-    denominator = beta_squared * precision + recall
-    if denominator == 0:
-        return 0.0
-    return 100.0 * (1 + beta_squared) * precision * recall / denominator
-
-
-def preservation_metrics(source: str, translated: str) -> dict[str, object]:
-    """Compare source token multisets so repeated literals count separately."""
-    source_tokens = _preservation_tokens(source)
-    translated_tokens = _preservation_tokens(translated)
-    result: dict[str, object] = {}
-    total_source = 0
-    total_preserved = 0
-    for category in ("placeholder", "date", "currency", "number"):
-        expected = Counter(token for kind, token in source_tokens if kind == category)
-        actual = Counter(token for kind, token in translated_tokens if kind == category)
-        count = sum(expected.values())
-        preserved = sum(min(amount, actual[token]) for token, amount in expected.items())
-        total_source += count
-        total_preserved += preserved
-        result[category] = {
-            "source_count": count,
-            "preserved_count": preserved,
-            "preservation_percent": 100.0 * preserved / count if count else None,
-        }
-    result["source_token_count"] = total_source
-    result["preserved_token_count"] = total_preserved
-    result["preservation_percent"] = (
-        100.0 * total_preserved / total_source if total_source else None
-    )
-    return result
-
-
-def _preservation_tokens(text: str) -> list[tuple[str, str]]:
-    tokens: list[tuple[str, str]] = []
-    for match in _TOKEN_RE.finditer(text):
-        category = next(name for name, value in match.groupdict().items() if value is not None)
-        tokens.append((category, match.group(0)))
-    return tokens
 
 
 def require_live_provider(settings: Settings) -> None:
@@ -166,10 +71,84 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout", type=float, default=900.0, help="maximum seconds per job (default: 900)"
     )
+    parser.add_argument(
+        "--models",
+        help="comma-separated priced models to compare (for example gpt-4o-mini,gpt-4o)",
+    )
     return parser
 
 
-async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, object]:
+def _models_to_compare(value: str) -> list[str]:
+    models = [model.strip() for model in value.split(",")]
+    if not models or any(not model for model in models):
+        raise MeasurementError("--models must be a comma-separated list of model names.")
+    if len(models) != len(set(models)):
+        raise MeasurementError("--models must not contain duplicate model names.")
+    calculator = ModelCostCalculator()
+    for model in models:
+        try:
+            calculator.estimate(model, 0, 0)
+        except ValueError:
+            raise MeasurementError(
+                f"--models includes an unsupported priced model: {model}."
+            ) from None
+    return models
+
+
+async def measure_models(args: argparse.Namespace, settings: Settings) -> dict[str, object]:
+    """Run each model through a fresh private database and cache."""
+    models = _models_to_compare(args.models)
+    reports: list[dict[str, object]] = []
+    rows: list[dict[str, object]] = []
+    for model in models:
+        run_settings = settings.model_copy(update={"openai_model": model})
+        report = await measure(args, run_settings, include_pipeline_usage=True)
+        reports.append(report)
+        rows.append(_comparison_row(report))
+    return {
+        "comparison": rows,
+        "reports": reports,
+        "notes": [
+            "Cost is the application estimate for provider-reported bulk and triage usage; "
+            "ambiguous or unrecorded usage is excluded, so this is not a billing total.",
+            "Cost per million is observed known cost divided by all reported input and output "
+            "tokens combined, multiplied by 1,000,000; it is not a provider price tier.",
+            "Requests counts recorded bulk chunk attempts only. Triage request counts are "
+            "not persisted and are excluded; glossary lookup makes no provider requests.",
+        ],
+    }
+
+
+def _comparison_row(report: dict[str, object]) -> dict[str, object]:
+    measurement = report["measurement"]
+    quality = report["quality"]
+    preservation = report["number_placeholder_preservation"]
+    pipeline_usage = report["pipeline_usage"]
+    assert isinstance(measurement, dict)
+    assert isinstance(quality, dict)
+    assert isinstance(preservation, dict)
+    assert isinstance(pipeline_usage, dict)
+    tokens_in = int(pipeline_usage["known_tokens_in"])
+    tokens_out = int(pipeline_usage["known_tokens_out"])
+    cost = float(pipeline_usage["known_estimated_cost_usd"])
+    total_tokens = tokens_in + tokens_out
+    return {
+        "model": measurement["model"],
+        "cost_per_million_mixed_tokens_usd": cost * 1_000_000 / total_tokens
+        if total_tokens
+        else None,
+        "known_estimated_run_cost_usd": cost,
+        "known_tokens_in": tokens_in,
+        "known_tokens_out": tokens_out,
+        "chrf": quality["score"],
+        "preservation_percent": preservation["preservation_percent"],
+        "recorded_bulk_requests": pipeline_usage["recorded_bulk_attempts"],
+    }
+
+
+async def measure(
+    args: argparse.Namespace, settings: Settings, *, include_pipeline_usage: bool = False
+) -> dict[str, object]:
     require_live_provider(settings)
     source_path = args.document.expanduser().resolve()
     if not source_path.is_file():
@@ -202,6 +181,7 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
         stop_worker = asyncio.Event()
         worker_task: asyncio.Task[None] | None = None
         jobs: list[dict[str, object]] = []
+        analyses: list[DocumentAnalysisRecord] = []
         try:
             async with application.router.lifespan_context(application):
                 transport = httpx.ASGITransport(app=application)
@@ -227,6 +207,7 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
                     source_blocks, analysis = await _document_snapshot(
                         run_settings, str(first["document_id"])
                     )
+                    analyses.append(analysis)
                     source_text = _join_blocks(source_blocks)
                     translated_path = root / f"forward-rendered{source_path.suffix.lower()}"
                     await asyncio.to_thread(translated_path.write_bytes, first["artifact"])
@@ -259,6 +240,11 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
                         assert isinstance(backward_measurement, dict)
                         backward_measurement["phase"] = "back_translation"
                         jobs.append(backward_measurement)
+                        if include_pipeline_usage:
+                            _backward_blocks, backward_analysis = await _document_snapshot(
+                                run_settings, str(backward["document_id"])
+                            )
+                            analyses.append(backward_analysis)
                         backward_path = root / f"back-rendered{source_path.suffix.lower()}"
                         await asyncio.to_thread(backward_path.write_bytes, backward["artifact"])
                         quality_candidate = await _extract_rendered_text(
@@ -290,7 +276,7 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
                         for job in jobs
                         for latency in job["chunk_attempt_latencies_ms"]  # type: ignore[union-attr]
                     ]
-                    return {
+                    report: dict[str, object] = {
                         "measurement": {
                             "date_utc": started_at.date().isoformat(),
                             "started_at": started_at.isoformat(),
@@ -335,8 +321,13 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
                         },
                         "jobs": jobs,
                         "measurement_exclusions": [
-                            "Triage/provider analysis usage is not persisted in jobs or "
-                            "chunk_attempts and is excluded.",
+                            (
+                                "The legacy usage field covers bulk jobs only; persisted "
+                                "triage usage is included separately in pipeline_usage."
+                                if include_pipeline_usage
+                                else "Triage/provider analysis usage is not persisted in jobs or "
+                                "chunk_attempts and is excluded."
+                            ),
                             "Chunk latency p95 uses persisted provider-attempt latency_ms rows, "
                             "including retries.",
                             "Job latency is persisted updated_at minus created_at; one run "
@@ -345,6 +336,9 @@ async def measure(args: argparse.Namespace, settings: Settings) -> dict[str, obj
                             "and other unsupported text regions are excluded.",
                         ],
                     }
+                    if include_pipeline_usage:
+                        report["pipeline_usage"] = _known_pipeline_usage(jobs, analyses)
+                    return report
         finally:
             if worker_task is not None:
                 stop_worker.set()
@@ -556,6 +550,30 @@ def _percentile_nearest_rank(values: list[int], percentile: int) -> int | None:
     return ordered[max(0, math.ceil(percentile * len(ordered) / 100) - 1)]
 
 
+def _known_pipeline_usage(
+    jobs: list[dict[str, object]], analyses: list[DocumentAnalysisRecord]
+) -> dict[str, object]:
+    bulk_cost = sum(float(job["attempt_cost_usd"]) for job in jobs)
+    triage_cost = sum(analysis.cost_usd_total for analysis in analyses)
+    bulk_tokens_in = sum(int(job["attempt_tokens_in"]) for job in jobs)
+    bulk_tokens_out = sum(int(job["attempt_tokens_out"]) for job in jobs)
+    triage_tokens_in = sum(analysis.tokens_in_total for analysis in analyses)
+    triage_tokens_out = sum(analysis.tokens_out_total for analysis in analyses)
+    return {
+        "known_estimated_cost_usd": bulk_cost + triage_cost,
+        "known_tokens_in": bulk_tokens_in + triage_tokens_in,
+        "known_tokens_out": bulk_tokens_out + triage_tokens_out,
+        "bulk_estimated_cost_usd": bulk_cost,
+        "bulk_tokens_in": bulk_tokens_in,
+        "bulk_tokens_out": bulk_tokens_out,
+        "triage_estimated_cost_usd": triage_cost,
+        "triage_tokens_in": triage_tokens_in,
+        "triage_tokens_out": triage_tokens_out,
+        "recorded_bulk_attempts": sum(int(job["attempt_count"]) for job in jobs),
+        "triage_request_count": None,
+    }
+
+
 def render_human_report(report: dict[str, object]) -> str:
     quality = report["quality"]
     usage = report["usage"]
@@ -606,6 +624,38 @@ def render_human_report(report: dict[str, object]) -> str:
     )
 
 
+def render_matrix_report(report: dict[str, object]) -> str:
+    rows = report["comparison"]
+    reports = report["reports"]
+    assert isinstance(rows, list)
+    assert isinstance(reports, list) and reports
+    first_quality = reports[0]["quality"]
+    assert isinstance(first_quality, dict)
+    lines = [
+        f"Quality mode: {first_quality['mode']}",
+        "",
+        "| Model | Cost / 1M tokens in+out (USD) | Known run cost (USD) | "
+        "chrF | Preservation % | Recorded bulk requests | Tokens in / out |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        assert isinstance(row, dict)
+        unit_cost = row["cost_per_million_mixed_tokens_usd"]
+        preservation = row["preservation_percent"]
+        lines.append(
+            f"| {row['model']} | "
+            f"{f'${float(unit_cost):.4f}' if unit_cost is not None else 'n/a'} | "
+            f"${float(row['known_estimated_run_cost_usd']):.6f} | "
+            f"{float(row['chrf']):.2f} | "
+            f"{f'{float(preservation):.2f}%' if preservation is not None else 'n/a'} | "
+            f"{row['recorded_bulk_requests']} | "
+            f"{row['known_tokens_in']} / {row['known_tokens_out']} |"
+        )
+    notes = report["notes"]
+    assert isinstance(notes, list)
+    return "\n".join([*lines, "", *[f"- {note}" for note in notes]])
+
+
 def _format_percent(value: object) -> str:
     if not isinstance(value, dict):
         return "not available"
@@ -635,7 +685,10 @@ def main() -> int:
         return 2
 
     try:
-        report = asyncio.run(measure(args, settings))
+        matrix_mode = getattr(args, "models", None) is not None
+        report = asyncio.run(
+            measure_models(args, settings) if matrix_mode else measure(args, settings)
+        )
     except MeasurementError as error:
         print(f"measurement failed: {error}", file=sys.stderr)
         return 1
@@ -643,7 +696,10 @@ def main() -> int:
         # Keep provider/adapter internals and settings values out of the report.
         print(f"measurement failed unexpectedly ({type(error).__name__}).", file=sys.stderr)
         return 1
-    print(render_human_report(report), file=sys.stderr)
+    print(
+        render_matrix_report(report) if matrix_mode else render_human_report(report),
+        file=sys.stderr,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
