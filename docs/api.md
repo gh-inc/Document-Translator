@@ -137,6 +137,13 @@ never include exception details or persisted diagnostic text.
   `cache_hits_total` and `cache_misses_total` sum persisted per-job lookup counts.
   Job summaries, SSE progress and MCP expose `cache_hit_blocks` and
   `cache_miss_blocks` as default-zero integers; retries can add observations.
+- Job payloads carry two distinct cost figures. `cost_usd` is the job's own bulk
+  translation spend. `analysis_cost_usd` (job summaries only) is the document's
+  cumulative triage cost from `document_analyses.cost_usd_total`, **shared by every
+  language** translated from that upload and resolved for a page in one batched
+  query. It is a default-zero non-negative integer, absent from SSE and MCP. A
+  zero means no usage was recorded; rows that predate instrumentation are
+  migrated with zeros and their expense cannot be reconstructed.
 
 Use `make test`, `make lint` and `make typecheck` for offline verification.
 API tests run against temporary file-backed SQLite databases with real WAL,

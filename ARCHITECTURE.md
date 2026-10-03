@@ -582,9 +582,19 @@ these terms; it is one of the brief's explicit questions.
 | `GET /api/documents/{id}` | document readiness: `analyzing` / `extracted` / `failed` + block count |
 | `POST /api/documents/{id}/retry-triage` | explicitly recover stuck or degraded triage |
 | `POST /api/jobs` | `{document_id, target_languages[], idempotency_key}` → batch of jobs |
-| `GET /api/jobs?limit=10` | recent jobs, newest first (limit bounded by the service) |
+| `GET /api/jobs?limit=10` | recent jobs, newest first (limit bounded by the service); each carries its own bulk `cost_usd` plus the document's shared `analysis_cost_usd` |
 | `GET /api/jobs/{id}` | status, progress, cost, structured error |
 | `POST /api/jobs/{id}/retry` | re-queue failed chunks (optional raised cost cap) |
+
+Job payloads carry two distinct cost figures. `cost_usd` is the job's own bulk
+translation spend. `analysis_cost_usd` is the document's cumulative triage cost
+from `document_analyses.cost_usd_total`, resolved for a whole page in one batched
+query and **shared by every language** translated from that upload. It is absent
+from `JobRecord`, which mirrors the `jobs` table one-to-one, and the history view
+renders it once per document rather than per card. A zero means no usage was
+recorded; for documents analysed before instrumentation that is not the same as a
+free analysis.
+
 | `GET /api/jobs/{id}/events` | SSE progress stream |
 | `GET /api/jobs/{id}/download` | translated file |
 | `GET /api/batches/{id}` | all jobs of a multi-language batch |
@@ -679,6 +689,11 @@ ID in its existing string parameter and reports readiness; after extraction,
 the caller repeats `translate_file` to enqueue. MCP submissions use stable
 content/language idempotency keys and return immediately after enqueue.
 Downloads are atomically copied into validated shared output directories.
+`download_result` distinguishes a host-side permission fault
+(`shared_dir_unavailable`, not retryable) from other filesystem errors
+(`internal_error`, retryable), because no client action resolves directory
+ownership; startup reports an unusable share once as
+`mcp_shared_dir_not_writable` without stopping the read-only tools.
 FastMCP owns startup/cleanup, initializes WAL before tools are accepted, and
 releases claimed triage work during shutdown. `python -m app.mcp_server` serves
 `0.0.0.0:8001/mcp`; Compose shares one `/data` volume across all processes.
@@ -705,7 +720,10 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
    `completed_with_errors` renders distinctly
    ("3 of 412 blocks could not be translated — kept in English. Retry.");
    failure states carry a concrete action.
-3. **History** — past jobs, status filter, re-download.
+3. **History** — past jobs, status filter, re-download. The document analysis
+   cost is shown once per document and labelled with the number of translations
+   sharing it, so three languages do not read as three separate charges; a zero
+   renders nothing rather than a misleading `$0.0000`.
 
 ---
 
