@@ -18,7 +18,8 @@ from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
 from app.adapters.llm.pricing import ModelCostCalculator
-from app.adapters.persistence.database import SqliteConnectionFactory
+from app.adapters.persistence.api import ApiPersistence
+from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import (
     SqliteDocumentRepository,
     SqliteJobExecutionRepository,
@@ -95,6 +96,36 @@ async def _upload(client: httpx.AsyncClient, sample: str) -> str:
     payload = response.json()
     assert payload["block_count"] > 0
     assert payload["status"] == "analyzing"
+    return payload["id"]
+
+
+async def _await_extraction(client: httpx.AsyncClient, document_id: str) -> None:
+    """The fake triage agent runs as a background task; wait for it to finish."""
+    for _ in range(200):
+        payload = (await client.get(f"/api/documents/{document_id}")).json()
+        if payload["status"] in {"extracted", "failed"}:
+            assert payload["status"] == "extracted"
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"document {document_id} never reached extracted")
+
+
+async def _upload_analysed(client: httpx.AsyncClient, sample: str) -> str:
+    """Upload and wait for analysis, tolerating a fast fake triage.
+
+    `_upload` asserts the document is still `analyzing` when the response
+    arrives. That is a race against the background triage task, which can finish
+    first; tests that need the cost must not depend on which side wins.
+    """
+    path = SAMPLES / sample
+    response = await client.post(
+        "/api/documents",
+        files={"file": (path.name, path.read_bytes())},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["block_count"] > 0
+    await _await_extraction(client, payload["id"])
     return payload["id"]
 
 
@@ -178,6 +209,94 @@ async def test_recent_jobs_returns_empty_collection(api_runtime) -> None:
     assert response.json() == []
 
 
+async def test_recent_jobs_report_one_shared_analysis_cost_per_document(
+    api_runtime,
+) -> None:
+    """Analysis cost belongs to the document, not to a job or a language."""
+    _, settings, client = api_runtime
+    document_id = await _upload_analysed(client, "sample_en.pdf")
+    created = await client.post(
+        "/api/jobs",
+        json={
+            "document_id": document_id,
+            "target_languages": ["de", "fr"],
+            "idempotency_key": "shared-analysis-cost",
+        },
+    )
+    assert created.status_code == 200
+
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        async with transaction(connection):
+            await connection.execute(
+                "UPDATE document_analyses SET cost_usd_total = 0.0014 WHERE document_id = ?",
+                (document_id,),
+            )
+    finally:
+        await connection.close()
+
+    other_id = "document-without-analysis"
+    other_connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        async with transaction(other_connection):
+            await other_connection.execute(
+                "INSERT INTO documents (id, filename, format, size_bytes, storage_path, "
+                "status) VALUES (?, 'other.pdf', 'pdf', 1, '/uploads/other.pdf', 'extracted')",
+                (other_id,),
+            )
+            await other_connection.execute(
+                "INSERT INTO jobs (id, document_id, batch_id, target_language, status, "
+                "total_chunks, done_chunks, model, prompt_version, idempotency_key) "
+                "VALUES ('job-other', ?, 'batch-other/1', 'de', 'queued', 1, 0, "
+                "'gpt-4o-mini', 'v1', 'idem-other')",
+                (other_id,),
+            )
+    finally:
+        await other_connection.close()
+
+    by_document: dict[str, set[float]] = {}
+    for summary in (await client.get("/api/jobs")).json():
+        by_document.setdefault(summary["document_id"], set()).add(summary["analysis_cost_usd"])
+    assert by_document[document_id] == {0.0014}
+    assert by_document[other_id] == {0.0}
+
+
+async def test_analysis_cost_resolves_in_one_statement_for_the_whole_list(
+    api_runtime,
+) -> None:
+    """Ten jobs must not cost ten extra queries."""
+    _, _, client = api_runtime
+    document_id = await _upload_analysed(client, "sample_en.pdf")
+    created = await client.post(
+        "/api/jobs",
+        json={
+            "document_id": document_id,
+            "target_languages": ["de", "fr", "es"],
+            "idempotency_key": "batched-analysis-cost",
+        },
+    )
+    assert len(created.json()["jobs"]) == 3
+
+    calls: list[list[str]] = []
+    original = ApiPersistence.analysis_costs
+
+    async def recording(self, document_ids):  # type: ignore[no-untyped-def]
+        calls.append(list(document_ids))
+        return await original(self, document_ids)
+
+    ApiPersistence.analysis_costs = recording  # type: ignore[method-assign]
+    try:
+        response = await client.get("/api/jobs?limit=10")
+    finally:
+        ApiPersistence.analysis_costs = original  # type: ignore[method-assign]
+
+    assert response.status_code == 200
+    assert len(calls) == 1, f"expected one batched lookup, saw {len(calls)}"
+    # The batch carries distinct documents, not one entry per job.
+    assert len(calls[0]) == len(set(calls[0]))
+    assert len(response.json()) > len(calls[0])
+
+
 async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:
     _, _, client = api_runtime
     document_id = await _upload(client, "sample_en.pdf")
@@ -193,7 +312,13 @@ async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:
     jobs = created.json()["jobs"]
     default_response = await client.get("/api/jobs")
     assert default_response.status_code == 200
-    assert default_response.json() == list(reversed(jobs))[:10]
+    page = default_response.json()
+    assert page == list(reversed(jobs))[:10]
+    # The analysis cost belongs to the document and is shared by every language,
+    # so it must not differ between the jobs of one page. FakeProvider also
+    # reports triage usage, so the figure is a real positive number.
+    assert {summary["analysis_cost_usd"] for summary in page} == {page[0]["analysis_cost_usd"]}
+    assert page[0]["analysis_cost_usd"] > 0.0
     assert set(default_response.json()[0]) == {
         "id",
         "document_id",
@@ -205,12 +330,16 @@ async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:
         "cache_hit_blocks",
         "cache_miss_blocks",
         "cost_usd",
+        "analysis_cost_usd",
         "error",
     }
     for limit, expected in [(2, 2), (0, 1), (-1, 1), (101, 12)]:
         response = await client.get("/api/jobs", params={"limit": limit})
         assert response.status_code == 200
-        assert response.json() == list(reversed(jobs))[:expected]
+        assert response.json() == [
+            {**summary, "analysis_cost_usd": page[0]["analysis_cost_usd"]}
+            for summary in list(reversed(jobs))[:expected]
+        ]
 
 
 async def test_recent_jobs_invalid_limit_uses_error_catalog(api_runtime) -> None:

@@ -9,7 +9,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_file_storage, get_job_service
+from app.adapters.persistence.api import ApiPersistence
+from app.api.dependencies import get_api_persistence, get_file_storage, get_job_service
 from app.api.responses import DownloadResponse
 from app.api.schemas import (
     BatchResponse,
@@ -35,6 +36,7 @@ _TERMINAL_STATUSES = {
 async def create_jobs(
     request: CreateJobRequest,
     service: Annotated[JobService, Depends(get_job_service)],
+    persistence: Annotated[ApiPersistence, Depends(get_api_persistence)],
 ) -> BatchResponse:
     jobs = await service.create_jobs(
         request.document_id,
@@ -43,18 +45,25 @@ async def create_jobs(
     )
     if not jobs:
         raise ServiceError(ErrorCode.INTERNAL_ERROR, status_code=500)
+    costs = await persistence.analysis_costs({job.document_id for job in jobs})
     return BatchResponse(
         batch_id=jobs[0].batch_id,
-        jobs=[_summary(job) for job in jobs],
+        jobs=[_summary(job, costs.get(job.document_id, 0.0)) for job in jobs],
     )
 
 
 @router.get("/api/jobs", response_model=list[JobSummaryResponse])
 async def list_recent_jobs(
     service: Annotated[JobService, Depends(get_job_service)],
+    persistence: Annotated[ApiPersistence, Depends(get_api_persistence)],
     limit: int = 10,
 ) -> list[JobSummaryResponse]:
-    return [_summary(job) for job in await service.list_recent_jobs(limit)]
+    jobs = await service.list_recent_jobs(limit)
+    # One batched lookup for the whole page, never one query per job. The ids are
+    # de-duplicated here as well so the statement carries one placeholder per
+    # document rather than one per job.
+    costs = await persistence.analysis_costs({job.document_id for job in jobs})
+    return [_summary(job, costs.get(job.document_id, 0.0)) for job in jobs]
 
 
 @router.get("/api/jobs/{job_id}", response_model=JobSummaryResponse)
@@ -169,7 +178,13 @@ async def get_batch(
     return BatchResponse(batch_id=batch_id, jobs=[_summary(job) for job in jobs])
 
 
-def _summary(job: JobRecord) -> JobSummaryResponse:
+def _summary(job: JobRecord, analysis_cost_usd: float = 0.0) -> JobSummaryResponse:
+    """Summarize a job, optionally with the document's shared analysis cost.
+
+    The default keeps single-job endpoints unchanged: a lone card has no sibling
+    translations to disambiguate against, and the batch view already reports the
+    figure.
+    """
     return JobSummaryResponse(
         id=job.id,
         document_id=job.document_id,
@@ -181,6 +196,7 @@ def _summary(job: JobRecord) -> JobSummaryResponse:
         cache_hit_blocks=job.cache_hit_blocks,
         cache_miss_blocks=job.cache_miss_blocks,
         cost_usd=job.cost_usd,
+        analysis_cost_usd=analysis_cost_usd,
         error=_safe_job_error(job.error_code),
     )
 

@@ -32,6 +32,9 @@ class JobSummaryResponse(BaseModel):
     cache_hit_blocks: int = Field(default=0, ge=0)
     cache_miss_blocks: int = Field(default=0, ge=0)
     cost_usd: float
+    #: Cumulative triage cost of the document, shared by every language. Zero
+    #: means no usage was recorded, which is not the same as a free analysis.
+    analysis_cost_usd: float = Field(default=0.0, ge=0.0)
     error: JobError | None
 
 

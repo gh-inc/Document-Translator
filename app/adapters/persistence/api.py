@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -190,6 +190,28 @@ class ApiPersistence:
             "cache_hits_total": 0 if cache_row is None else int(cache_row[0]),
             "cache_misses_total": 0 if cache_row is None else int(cache_row[1]),
         }
+
+    async def analysis_costs(self, document_ids: Iterable[str]) -> dict[str, float]:
+        """Resolve cumulative triage cost per document in a single query.
+
+        The analysis cost belongs to a document and is shared by every language
+        translated from it. It is therefore absent from `JobRecord`, which mirrors
+        the `jobs` table one-to-one, and resolved here for the response schema.
+
+        Placeholders are built from the count of distinct ids, never from their
+        values, so a document id cannot reach the SQL text.
+        """
+        unique = sorted({value for value in document_ids if value})
+        if not unique:
+            return {}
+        placeholders = ",".join("?" * len(unique))
+        async with self._connection.execute(
+            f"SELECT document_id, cost_usd_total FROM document_analyses "
+            f"WHERE document_id IN ({placeholders})",
+            tuple(unique),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return {str(row["document_id"]): float(row["cost_usd_total"]) for row in rows}
 
     async def retry_job(
         self,

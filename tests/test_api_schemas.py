@@ -116,6 +116,27 @@ def test_cache_counts_default_to_zero_and_reject_negative_values(field: str) -> 
         JobSummaryResponse.model_validate({**job.model_dump(), field: -1})
 
 
+def test_analysis_cost_defaults_to_zero_and_rejects_negative_values() -> None:
+    """The shared analysis cost is optional at the call site, never negative."""
+    job = JobSummaryResponse(
+        id="job-1",
+        document_id="document-1",
+        batch_id="batch-1",
+        target_language="de",
+        status=JobStatus.QUEUED,
+        total_chunks=1,
+        done_chunks=0,
+        cost_usd=0,
+        error=None,
+    )
+    assert job.analysis_cost_usd == 0.0
+    with pytest.raises(ValidationError):
+        JobSummaryResponse.model_validate({**job.model_dump(), "analysis_cost_usd": -0.0001})
+    assert JobSummaryResponse.model_validate(
+        {**job.model_dump(), "analysis_cost_usd": 0.0014}
+    ).analysis_cost_usd == pytest.approx(0.0014)
+
+
 def test_server_sent_event_and_error_response_roundtrip() -> None:
     error = {
         "error_code": "scanned_pdf",
