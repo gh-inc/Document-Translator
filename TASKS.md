@@ -118,9 +118,9 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-73 | 10 | Verify MCP with an isolated editor client | done | f65699e |
 | DT-74 | 10 | Verify secret hygiene and record delivery commits | done | f65699e |
 | DT-75 | 10 | Run final checks and independently review Stage 10 | done | f65699e |
-| DT-76 | 11 | Restore render diagnostics behind opaque errors | done | |
-| DT-77 | 11 | Degrade PDF blocks with unsupported glyphs instead of failing | done | |
-| DT-78 | 11 | Warn about unsupported source glyphs at upload | done | |
+| DT-76 | 11 | Restore render diagnostics behind opaque errors | done | e3ba009 |
+| DT-77 | 11 | Degrade PDF blocks with unsupported glyphs instead of failing | done | e3ba009 |
+| DT-78 | 11 | Warn about unsupported source glyphs at upload | done | e3ba009 |
 
 ### PDF glyph resilience execution (2026-10-03)
 
