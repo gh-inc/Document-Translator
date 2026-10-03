@@ -147,7 +147,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-98 | docs | Record PDF glyph and DOCX table defect investigation | done | 9b4aa5b |
 | DT-99 | docs | Backfill agent token usage in execution records | done | f8e32cd |
 | DT-100 | triage | Diagnose, measure and improve bounded triage convergence | done | 3a919c0 |
-| DT-102 | triage | Use measured Luna 6 as the independent triage default | done | pending delivery hash |
+| DT-102 | triage | Use measured Luna 6 as the independent triage default | done | df74f79 |
 
 ### MCP download error mapping execution (2026-10-03)
 
