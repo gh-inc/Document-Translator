@@ -132,7 +132,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-87 | 11 | Bypass structural blocks in enqueue and worker completion | done | 8f52460 |
 | DT-88 | 11 | Wire Markdown detection, REST/MCP/worker and frontend | done | 8f52460 |
 | DT-89 | 11 | Document, review, verify and deliver Markdown support | done | 8f52460 |
-| DT-90 | 11 | Correct MCP download filesystem error mapping and verify delivery | done | pending delivery |
+| DT-90 | 11 | Correct MCP download filesystem error mapping and verify delivery | done | 7f2c224 |
 
 ### MCP download error mapping execution (2026-10-03)
 

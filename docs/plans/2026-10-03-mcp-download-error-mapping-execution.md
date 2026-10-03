@@ -89,3 +89,9 @@ These are the sum of the latest `total_token_usage` events for this root session
 and its three delegated session files, not an estimate of document translation
 usage or a provider invoice. Remaining commit/report turns are not included.
 No successful nested Codex model call occurred; FastMCP verification used 0/0.
+
+## Delivery
+
+Implementation and evidence commit: `7f2c224`. Task hash is backfilled in a
+separate documentation commit, without rewriting history. Unrelated edits
+remain unstaged.
