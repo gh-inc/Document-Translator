@@ -40,6 +40,67 @@ async def test_missing_jobs_empty_list_and_nonterminal_download(
     assert len(await tools.list_recent_jobs(10000)) == 2
 
 
+async def test_download_reports_a_permission_fault_as_non_retryable(
+    runtime: McpRuntime, input_pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host-side ownership fault cannot be fixed by any client action."""
+    tools = McpTools(runtime)
+    submission = await tools.translate_file(str(input_pdf), ["de"])
+    assert isinstance(submission, TranslationSubmission)
+    job_id = submission.job_ids[0]
+    await runtime.storage.save_output(job_id, b"translated bytes", "sample.pdf")
+    connection = await runtime.factory.create()
+    try:
+        from app.adapters.persistence.repositories import SqliteJobExecutionRepository
+
+        repository = SqliteJobExecutionRepository(connection)
+        async with transaction(connection):
+            await repository.complete_job(job_id, JobStatus.DONE)
+    finally:
+        await connection.close()
+
+    def _deny(*_args: object, **_kwargs: object) -> Path:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("app.mcp_server.server._copy_output", _deny)
+    result = await tools.download_result(job_id, "output")
+    assert isinstance(result, ToolError)
+    assert result.error_code is ErrorCode.SHARED_DIR_UNAVAILABLE
+    assert result.retryable is False
+    # The catalogued message must not carry a host path or the raw errno text.
+    assert "Permission denied" not in result.message
+    assert str(runtime.settings.mcp_shared_dir) not in result.message
+
+
+async def test_download_keeps_other_filesystem_errors_retryable(
+    runtime: McpRuntime, input_pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ENOSPC and friends stay internal and retryable; only permission is terminal."""
+    tools = McpTools(runtime)
+    submission = await tools.translate_file(str(input_pdf), ["de"])
+    assert isinstance(submission, TranslationSubmission)
+    job_id = submission.job_ids[0]
+    await runtime.storage.save_output(job_id, b"translated bytes", "sample.pdf")
+    connection = await runtime.factory.create()
+    try:
+        from app.adapters.persistence.repositories import SqliteJobExecutionRepository
+
+        repository = SqliteJobExecutionRepository(connection)
+        async with transaction(connection):
+            await repository.complete_job(job_id, JobStatus.DONE)
+    finally:
+        await connection.close()
+
+    def _full(*_args: object, **_kwargs: object) -> Path:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("app.mcp_server.server._copy_output", _full)
+    result = await tools.download_result(job_id, "output")
+    assert isinstance(result, ToolError)
+    assert result.error_code is ErrorCode.INTERNAL_ERROR
+    assert result.retryable is True
+
+
 async def test_download_complete_partial_and_path_guards(
     runtime: McpRuntime, input_pdf: Path
 ) -> None:
@@ -81,14 +142,22 @@ async def test_download_complete_partial_and_path_guards(
 @pytest.mark.parametrize(
     ("failure", "expected_code", "expected_retryable", "expected_message"),
     [
+        # Permission is terminal: no client action resolves host ownership.
         (
             PermissionError("private permission detail"),
+            ErrorCode.SHARED_DIR_UNAVAILABLE,
+            False,
+            "Shared translation directory is not writable by the service",
+        ),
+        # Every other OSError stays internal and retryable.
+        (
+            OSError(errno.ENOSPC, "private disk detail"),
             ErrorCode.INTERNAL_ERROR,
             True,
             "Internal server error",
         ),
         (
-            OSError(errno.ENOSPC, "private disk detail"),
+            OSError(errno.EIO, "private io detail"),
             ErrorCode.INTERNAL_ERROR,
             True,
             "Internal server error",
