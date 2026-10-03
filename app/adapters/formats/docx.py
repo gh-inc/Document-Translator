@@ -1,4 +1,4 @@
-"""DOCX paragraph extraction and translation rendering."""
+"""DOCX body and table paragraph extraction and translation rendering."""
 
 import asyncio
 import hashlib
@@ -8,6 +8,10 @@ from typing import Any
 
 import structlog
 from docx import Document
+from docx.document import Document as DocxDocument
+from docx.oxml.ns import qn
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 from app.core.errors import DocumentError, ErrorCode
 from app.core.models import Block, DocumentIR, RenderResult
@@ -16,7 +20,7 @@ _logger = structlog.get_logger(__name__)
 
 
 class DocxExtractor:
-    """Extract top-level document paragraphs as opaque-metadata blocks."""
+    """Extract body and top-level table paragraphs in document reading order."""
 
     async def extract(self, file_path: Path, document_id: str) -> DocumentIR:
         try:
@@ -55,25 +59,42 @@ def _extract_sync(file_path: Path, document_id: str) -> DocumentIR:
     document = Document(str(file_path))
     blocks: list[Block] = []
 
-    for paragraph_index, paragraph in enumerate(document.paragraphs):
-        source_text = paragraph.text.strip()
-        if not source_text:
-            continue
-
-        seq = len(blocks)
-        style = paragraph.style
-        blocks.append(
-            Block(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{seq}")),
-                seq=seq,
-                source_text=source_text,
-                source_hash=hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
-                format_metadata={
-                    "paragraph_index": paragraph_index,
-                    "style": style.name if style is not None else "Normal",
-                },
+    table_index = 0
+    for body_index, child in enumerate(document.element.body.iterchildren()):
+        if child.tag == qn("w:p"):
+            _append_paragraph_block(
+                blocks,
+                document_id,
+                Paragraph(child, document),
+                {"container": "body", "body_index": body_index},
             )
-        )
+        elif child.tag == qn("w:tbl"):
+            table = Table(child, document)
+            # Keep XML references alive for the whole table: vertical merges can
+            # alias cells from earlier rows, and discarded proxies can reuse ids.
+            seen_cells: dict[int, Any] = {}
+            for row_index, row in enumerate(table.rows):
+                for cell_index, cell in enumerate(row.cells):
+                    cell_id = id(cell._tc)
+                    if cell_id in seen_cells:
+                        continue
+                    seen_cells[cell_id] = cell._tc
+                    # cell.paragraphs contains direct paragraphs only, so nested
+                    # table text is intentionally outside this adapter's scope.
+                    for paragraph_index, paragraph in enumerate(cell.paragraphs):
+                        _append_paragraph_block(
+                            blocks,
+                            document_id,
+                            paragraph,
+                            {
+                                "container": "table",
+                                "table_index": table_index,
+                                "row_index": row_index,
+                                "cell_index": cell_index,
+                                "paragraph_index": paragraph_index,
+                            },
+                        )
+            table_index += 1
 
     return DocumentIR(
         id=document_id,
@@ -85,6 +106,30 @@ def _extract_sync(file_path: Path, document_id: str) -> DocumentIR:
     )
 
 
+def _append_paragraph_block(
+    blocks: list[Block],
+    document_id: str,
+    paragraph: Paragraph,
+    metadata: dict[str, Any],
+) -> None:
+    source_text = paragraph.text.strip()
+    if not source_text:
+        return
+
+    seq = len(blocks)
+    style = paragraph.style
+    metadata["style"] = style.name if style is not None else "Normal"
+    blocks.append(
+        Block(
+            id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{seq}")),
+            seq=seq,
+            source_text=source_text,
+            source_hash=hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+            format_metadata=metadata,
+        )
+    )
+
+
 def _render_sync(
     original_path: Path,
     blocks: list[Block],
@@ -92,25 +137,24 @@ def _render_sync(
     output_path: Path,
 ) -> Path:
     document = Document(str(original_path))
-    replacements: dict[int, str] = {}
+    replacements: dict[int, tuple[Paragraph, str]] = {}
 
     for block in blocks:
         if block.id not in translations:
             continue
 
-        paragraph_index = _paragraph_index(block.format_metadata)
-        if paragraph_index >= len(document.paragraphs):
-            raise ValueError("paragraph index is outside the document")
-        if paragraph_index in replacements:
+        paragraph = _resolve_paragraph(document, block.format_metadata)
+        paragraph_id = id(paragraph._p)
+        if paragraph_id in replacements:
             raise ValueError("multiple blocks refer to one paragraph")
 
         translated_text = translations[block.id]
         if not isinstance(translated_text, str):
             raise ValueError("translation must be text")
-        replacements[paragraph_index] = translated_text
+        # Retain paragraph proxies, including their XML elements, until save.
+        replacements[paragraph_id] = (paragraph, translated_text)
 
-    for paragraph_index, translated_text in replacements.items():
-        paragraph = document.paragraphs[paragraph_index]
+    for paragraph, translated_text in replacements.values():
         paragraph.clear()
         paragraph.add_run(translated_text)
 
@@ -118,11 +162,31 @@ def _render_sync(
     return output_path
 
 
-def _paragraph_index(metadata: dict[str, Any]) -> int:
-    value = metadata.get("paragraph_index")
+def _index(metadata: dict[str, Any], key: str) -> int:
+    value = metadata.get(key)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValueError("invalid paragraph index metadata")
+        raise ValueError("invalid paragraph locator metadata")
+    return value
+
+
+def _resolve_paragraph(document: DocxDocument, metadata: dict[str, Any]) -> Paragraph:
     style = metadata.get("style")
     if not isinstance(style, str):
         raise ValueError("invalid paragraph style metadata")
-    return value
+
+    # Historic locators address document.paragraphs, not body XML children.
+    if "container" not in metadata:
+        return document.paragraphs[_index(metadata, "paragraph_index")]
+
+    container = metadata["container"]
+    if container == "body":
+        child = document.element.body[_index(metadata, "body_index")]
+        if child.tag != qn("w:p"):
+            raise ValueError("body locator does not refer to a paragraph")
+        return Paragraph(child, document)
+    if container == "table":
+        table = document.tables[_index(metadata, "table_index")]
+        row = table.rows[_index(metadata, "row_index")]
+        cell = row.cells[_index(metadata, "cell_index")]
+        return cell.paragraphs[_index(metadata, "paragraph_index")]
+    raise ValueError("invalid paragraph container metadata")

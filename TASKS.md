@@ -140,6 +140,10 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-93 | 11 | Fail fast on terminal triage failures, configure agent limits, surface analysis cost | done | 3c50295 |
 
+| DT-94 | 11 | Translate DOCX body and table paragraphs with compatible locators | done | pending delivery hash |
+| DT-95 | 11 | Verify DOCX table edge cases and sample round trips | done | pending delivery hash |
+| DT-96 | 11 | Review, document and deliver DOCX table translation | done | pending delivery hash |
+
 ### MCP download error mapping execution (2026-10-03)
 
 DT-90 fixes the operational download error classification defect. Delegated
@@ -507,3 +511,19 @@ production build, lint and backend typecheck passed (61 source files). Fake ASGI
 smoke confirmed extraction and non-zero cumulative analysis cost. No live calls
 or push; unrelated user edits remain unstaged. See
 [execution record](docs/plans/2026-10-03-triage-agent-efficiency-execution.md).
+
+### DOCX table translation execution (2026-10-03)
+
+DT-94–DT-96 implement the user-authorized DOCX table design. Delegated owners
+handled adapter and regression tests; root handled integration/docs/delivery,
+with independent implementation and fix-wave reviews. DOCX now extracts body
+and top-level cell paragraphs in reading order, deduplicates merged cells, and
+renders both new and historical locators. Nested tables/headers/footers remain
+unchanged; historical persisted extractions are not migrated.
+
+Acceptance: 672 backend tests passed, 2 live tests deselected; lint clean
+(174 files), typecheck clean (61 source files). All 44 paragraphs of both Platon
+DOCX samples render with replacements; the complex sample also passes through
+FakeProvider. Independent reviews found no remaining issues. No live calls or
+push; unrelated user edits excluded. See
+[execution record](docs/plans/2026-10-03-docx-tables-execution.md).

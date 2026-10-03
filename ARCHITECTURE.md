@@ -188,7 +188,7 @@ Block:                        # the only document abstraction the core knows
     format_metadata: dict     # OPAQUE JSON — written by the extractor, read
                               # only by the same format's renderer.
                               # PDF: page + bbox + font size.
-                              # DOCX: paragraph/run indices.
+                              # DOCX: body/table paragraph locators.
 ```
 
 The contract:
@@ -209,8 +209,9 @@ The contract:
   Its table delimiters and padding
   stay in opaque metadata; model output supplies cell text only. Empty cells
   remain real blocks for rendering, but adapter-classified IDs bypass chunking,
-  bulk provider calls and the cache. Markdown tables are translated; DOCX tables
-  are not.
+  bulk provider calls and the cache. Markdown tables and paragraphs in top-level
+  DOCX table cells are translated. DOCX nested tables, headers and footers
+  remain unchanged.
 
 Empty-cell bypass preserves bulk translation token usage and cost for the
 same translated content. Triage still receives the full document IR for
@@ -453,10 +454,16 @@ typography (font size auto-shrink bounded by a minimum readable size; blocks
 that cannot fit fall back to clean regenerated pages). **Text-oriented PDFs
 come out well; pixel-perfect preservation is explicitly out of scope** —
 columns, complex tables, RTL, and heavy reflow are known limits, listed in
-DECISIONS.md. DOCX uses top-level paragraph blocks: it clears all inline
-content in translated paragraphs, inserts one plain run, and preserves
-paragraph styles/properties. Table cells, headers, and footers remain on the
-original canvas unchanged; their translation is outside the Stage 3 scope.
+DECISIONS.md. DOCX extracts body paragraphs and paragraphs in top-level table
+cells in document reading order, deduplicating merged cells. It clears all
+inline content in translated paragraphs, inserts one plain run, and preserves
+paragraph styles/properties and table structure. Empty paragraphs are skipped;
+nested tables, headers and footers remain unchanged. Format-owned locators
+distinguish body child positions from table/cell paragraph positions; historical
+metadata without a container still resolves top-level paragraph indices.
+This extends the original Stage 3 body-only scope. Previously extracted documents
+retain their original blocks; re-uploading byte-identical files reuses persisted
+extraction and does not add table blocks retroactively.
 The bbox-insertion approach is validated on the sample document
 before we commit to it as the default renderer (§17).
 

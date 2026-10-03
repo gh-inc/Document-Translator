@@ -65,13 +65,14 @@ async def test_extractor_returns_nonempty_paragraphs_in_order_with_stable_identi
     assert first.size_bytes == source.stat().st_size
     assert first.page_count is None
     assert first.warnings == []
-    assert [block.seq for block in first.blocks] == [0, 1, 2]
+    assert [block.seq for block in first.blocks] == [0, 1, 2, 3]
     assert [block.source_text for block in first.blocks] == [
         "Original heading",
         "Read this link now",
         "Keep this",
+        "Table stays",
     ]
-    assert [block.format_metadata["paragraph_index"] for block in first.blocks] == [
+    assert [block.format_metadata["body_index"] for block in first.blocks[:3]] == [
         1,
         2,
         3,
@@ -80,6 +81,13 @@ async def test_extractor_returns_nonempty_paragraphs_in_order_with_stable_identi
         "Heading 1",
         "Body Text",
         "Normal",
+        "Normal",
+    ]
+    assert [block.format_metadata["container"] for block in first.blocks] == [
+        "body",
+        "body",
+        "body",
+        "table",
     ]
     assert [block.id for block in first.blocks] == [block.id for block in second.blocks]
     assert first.blocks[0].id == str(uuid.uuid5(uuid.NAMESPACE_URL, "document-1:0"))

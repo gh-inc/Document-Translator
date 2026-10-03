@@ -6,6 +6,13 @@ services; a separate worker translates and renders the original document.
 See [architecture](ARCHITECTURE.md), [REST usage](docs/api.md),
 [worker operations](docs/worker.md) and [trade-offs](DECISIONS.md).
 
+DOCX translates body paragraphs and paragraphs in top-level table cells in reading
+order, including merged cells, while preserving table structure and paragraph
+styles. Nested tables, headers and footers remain unchanged; inline formatting
+in translated paragraphs is replaced by a plain run. Existing persisted DOCX
+extractions remain renderable but do not gain table blocks retroactively;
+byte-identical re-uploads reuse those extractions.
+
 ## Architecture and acceptance criteria
 
 ```text
