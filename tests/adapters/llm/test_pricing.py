@@ -93,3 +93,17 @@ def test_estimate_usage_rejects_cached_tokens_outside_input_range(
 def test_estimate_usage_rejects_unknown_model() -> None:
     with pytest.raises(ValueError, match="Unknown model"):
         ModelCostCalculator().estimate_usage("unknown-model", 1, 1, 0)
+
+
+@pytest.mark.parametrize(
+    "model,input_rate,cached_rate,output_rate",
+    [("gpt-6-luna", 0.10, 0.01, 0.50), ("gpt-5.6-luna", 0.20, 0.02, 1.20)],
+)
+def test_luna_reported_usage_snapshot(model, input_rate, cached_rate, output_rate):
+    calculator = ModelCostCalculator()
+    assert calculator.estimate_usage(model, 100_000, 100_000, 50_000) == pytest.approx(
+        (input_rate / 2 + cached_rate / 2 + output_rate) / 10
+    )
+    assert calculator.estimate(model, 100_000, 100_000) == pytest.approx(
+        (input_rate + output_rate) / 10
+    )

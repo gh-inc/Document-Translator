@@ -513,10 +513,26 @@ pricing snapshot; changes to provider prices require a table update.
 `estimate_usage` prices cached input separately and validates its range, while
 `estimate` preserves the existing bulk pricing behavior.
 
-**Where the agent earns its keep — triage.** The document is unknown; someone
-must look inside it with navigation tools (`read_blocks`, `search_blocks`)
-and make a judgment shaping all downstream chunks. Tool calling is real: the agent decides how many samples
-to pull and whether to look again.
+**Where the agent earns its keep — triage.** Navigation uses only
+`read_blocks` and `search_blocks`, starting with a bounded outline of at most
+60 block heads (80 characters each), split between the beginning and end of long
+documents, plus script counts. Tools retain their existing output bounds.
+Safe telemetry records only tool names, numeric argument shapes and counts.
+
+DT-100 measured five PDF/DOCX samples using `gpt-4o-mini` at 16 turns: both the
+old and corrected prompts delivered an accepted plan on 1/5 (20%) documents.
+Mean reported-usage cost rose from $0.00244629 to $0.00689094 with the outline.
+After the owner approved independent models, `TRIAGE_MODEL=gpt-4o` delivered
+accepted plans on 5/5 files (100%), averaging $0.03404600 and 3.8 requests.
+`OPENAI_MODEL=gpt-4o-mini` remains the independent bulk/glossary default.
+Requested Luna6 and Luna5.6 follow-up runs each accepted 5/5 plans, with mean
+cache-write-adjusted estimates $0.000998178 and $0.002089002. They are explicit
+TRIAGE_MODEL options; default remains gpt-4o. Production token pricing excludes
+the cache-write premium, separately captured only for this evaluation.
+The mini run does not demonstrate convergence improvement; 4/5 required
+the degraded path. The five-file gpt-4o result is a small-corpus observation,
+not a population success rate. The corpus's bulk spend and triage share of total spend were
+not measured. See [DT-100 execution](docs/plans/2026-10-03-triage-convergence-execution.md).
 
 Triage ends immediately on a non-retryable `ProviderError` or a
 `TriageTerminalError` after turn-budget exhaustion. The latter retains
@@ -525,7 +541,7 @@ bulk retry behavior. Bare injected exceptions and retryable provider failures
 retain up to three attempts. Known usage from the final failed attempt still
 contributes to cumulative analysis totals before degraded publication.
 
-`TRIAGE_MAX_TURNS` defaults to 8 (1–20); it is the single navigation-call cap
+`TRIAGE_MAX_TURNS` defaults to 16 (1–20); it is the single navigation-call cap
 with parallel tool calls disabled. `TRIAGE_TIMEOUT_SECONDS` defaults to 60
 (finite, >0 and ≤300). The service guard is always five seconds longer so the
 adapter can return usage on timeout. MCP retains its independent polling limit;

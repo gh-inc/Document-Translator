@@ -143,6 +143,10 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-94 | 11 | Translate DOCX body and table paragraphs with compatible locators | done | 3d0dd66 |
 | DT-95 | 11 | Verify DOCX table edge cases and sample round trips | done | 3d0dd66 |
 | DT-96 | 11 | Review, document and deliver DOCX table translation | done | 3d0dd66 |
+| DT-97 | docs | Add review overview and total cost accounting | done | be51d3c |
+| DT-98 | docs | Record PDF glyph and DOCX table defect investigation | done | 9b4aa5b |
+| DT-99 | docs | Backfill agent token usage in execution records | done | f8e32cd |
+| DT-100 | triage | Diagnose, measure and improve bounded triage convergence | done | delivery hash recorded below |
 
 ### MCP download error mapping execution (2026-10-03)
 
@@ -527,3 +531,17 @@ DOCX samples render with replacements; the complex sample also passes through
 FakeProvider. Independent reviews found no remaining issues. No live calls or
 push; unrelated user edits excluded. See
 [execution record](docs/plans/2026-10-03-docx-tables-execution.md).
+
+### DT-100 triage convergence execution
+
+The owner approved independent TRIAGE_MODEL (default gpt-4o) and OPENAI_MODEL
+(default gpt-4o-mini). Telemetry, bounded outline/instruction fixes, model routing
+and exact-ID Luna compatibility are implemented and independently reviewed.
+Mini accepted 1/5 plans both before/after; gpt-4o and both requested Luna candidates
+accepted 5/5. Cache-write-adjusted Luna6/Luna5.6 estimates averaged $0.000998178
+and $0.002089002; production estimates exclude that premium. Terminal exhaustion
+remains fail-fast. All measured claims retain the small-corpus limitation.
+Final task-only acceptance: 685 tests passed, 2 live tests deselected; lint clean
+(177 files), typecheck clean (61 source files). Delivery hashes follow after commit.
+Concurrent MCP work is excluded. See
+[execution evidence](docs/plans/2026-10-03-triage-convergence-execution.md).

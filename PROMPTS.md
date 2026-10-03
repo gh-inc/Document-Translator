@@ -880,3 +880,31 @@ with FakeProvider observed $0.000038775 analysis cost after extraction.
 
 Verification and token telemetry are recorded in
 [DT-93 execution](docs/plans/2026-10-03-triage-agent-efficiency-execution.md).
+
+
+## DT-100 — triage convergence (2026-10-04)
+
+The owner requested planning, delegation, execution, verification and commit of
+the convergence plan. Root delegated telemetry and then outline/config/tests to
+separate implementers, with a telemetry reviewer and independent whole-branch
+reviewer. Root owned live measurements, task tracking, evidence and delivery.
+
+Rejected inference: keyword lengths cannot identify glossary/summary searches.
+Measured reality: mini produced accepted plans for 1/5 files both before/after;
+the outline raised mean cost rather than delivering a demonstrated convergence
+improvement. The default limit is 16, never raised further to hide that failure.
+The Phase 4 owner gate was presented with the consequence that the existing model
+setting also governs bulk; the owner then approved separate settings and asked
+for Luna6/5.6 evaluation. Tests remain offline; marked-live measurements were
+explicitly run through the real adapter. No source or keyword text was logged.
+
+See [DT-100 execution](docs/plans/2026-10-03-triage-convergence-execution.md) for
+measurements, reviews, policy choice, acceptance checks and token accounting.
+
+Follow-up delegation split models and added exact-ID Luna request compatibility.
+Independent whole-branch reviewer confirmed the wire fields and recalculated all
+live cost figures, including write-cache premiums. Both Luna candidates accepted
+5/5 plans; they remain opt-ins. Sandbox duplicate-test stalls were not treated as
+application bugs; verification ran outside sandbox. Final task-only suite passed
+685 tests, with lint and typecheck clean. Concurrent MCP docs/code hunks are
+excluded from delivery using a scoped index patch.

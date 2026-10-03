@@ -1,0 +1,217 @@
+[
+  {
+    "file": "sample_en.pdf",
+    "triage_status": "ok",
+    "domain": "business operations and translation project reporting",
+    "terms_count": 8,
+    "tokens_in": 3940,
+    "tokens_out": 237,
+    "cached_tokens_in": 1038,
+    "requests": 4,
+    "model": "gpt-5.6-luna",
+    "cost_usd_total": 0.00088556,
+    "cache_write_tokens": 1125,
+    "request_input_tokens": [
+      836,
+      935,
+      1041,
+      1128
+    ],
+    "cost_usd_with_cache_write_premium": 0.00094181,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 4,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.pdf",
+    "triage_status": "ok",
+    "domain": "\u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0444\u0438\u043b\u043e\u0441\u043e\u0444\u0438\u0438",
+    "terms_count": 18,
+    "tokens_in": 23402,
+    "tokens_out": 359,
+    "cached_tokens_in": 17401,
+    "requests": 4,
+    "model": "gpt-5.6-luna",
+    "cost_usd_total": 0.00197902,
+    "cache_write_tokens": 5870,
+    "request_input_tokens": [
+      5725,
+      5782,
+      5903,
+      5992
+    ],
+    "cost_usd_with_cache_write_premium": 0.00227252,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 34,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.pdf",
+    "triage_status": "ok",
+    "domain": "history of philosophy",
+    "terms_count": 9,
+    "tokens_in": 26349,
+    "tokens_out": 256,
+    "cached_tokens_in": 19363,
+    "requests": 4,
+    "model": "gpt-5.6-luna",
+    "cost_usd_total": 0.00209166,
+    "cache_write_tokens": 6855,
+    "request_input_tokens": [
+      6300,
+      6452,
+      6620,
+      6977
+    ],
+    "cost_usd_with_cache_write_premium": 0.00243441,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 3,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 66,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 62,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.docx",
+    "triage_status": "ok",
+    "domain": "\u0444\u0438\u043b\u043e\u0441\u043e\u0444\u0438\u044f; \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0444\u0438\u043b\u043e\u0441\u043e\u0444\u0438\u0438",
+    "terms_count": 10,
+    "tokens_in": 24785,
+    "tokens_out": 334,
+    "cached_tokens_in": 18276,
+    "requests": 4,
+    "model": "gpt-5.6-luna",
+    "cost_usd_total": 0.0020681200000000005,
+    "cache_write_tokens": 6378,
+    "request_input_tokens": [
+      6030,
+      6076,
+      6179,
+      6500
+    ],
+    "cost_usd_with_cache_write_premium": 0.0023870200000000005,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 1,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 43,
+        "count": 1,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.docx",
+    "triage_status": "ok",
+    "domain": "\u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0444\u0438\u043b\u043e\u0441\u043e\u0444\u0438\u0438 \u0438 \u0430\u043d\u0442\u0438\u0447\u043d\u0430\u044f \u0444\u0438\u043b\u043e\u0441\u043e\u0444\u0438\u044f",
+    "terms_count": 12,
+    "tokens_in": 25220,
+    "tokens_out": 324,
+    "cached_tokens_in": 18600,
+    "requests": 4,
+    "model": "gpt-5.6-luna",
+    "cost_usd_total": 0.0020848000000000004,
+    "cache_write_tokens": 6489,
+    "request_input_tokens": [
+      6042,
+      6197,
+      6370,
+      6611
+    ],
+    "cost_usd_with_cache_write_premium": 0.0024092500000000004,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 40,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 6,
+        "returned": 6,
+        "event": "triage_tool_call"
+      }
+    ]
+  }
+]

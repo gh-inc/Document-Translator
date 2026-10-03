@@ -50,8 +50,13 @@ linguists who need computer-assisted translation (CAT) tools and workflows.
 
 ### Where an agent earns its keep
 
-Triage limits are configurable with `TRIAGE_MAX_TURNS` (default 8, range 1–20)
+Triage limits are configurable with `TRIAGE_MAX_TURNS` (default 16, range 1–20)
 and `TRIAGE_TIMEOUT_SECONDS` (default 60, finite >0, at most 300 seconds).
+`TRIAGE_MODEL` defaults to `gpt-4o` for document analysis; `OPENAI_MODEL`
+defaults to `gpt-4o-mini` for bulk translation and glossary generation.
+`TRIAGE_MODEL=gpt-6-luna` and `gpt-5.6-luna` are also tested options;
+[triage measurements](docs/plans/2026-10-03-triage-convergence-execution.md)
+report the five-document results and cost-accounting limits.
 Non-retryable provider errors and exhausted turn budgets immediately publish
 a degraded plan; other failures retain up to three attempts. The service guard
 is five seconds longer than the adapter timeout. MCP polling remains independent.

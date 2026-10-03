@@ -662,3 +662,39 @@ Expose persisted `cost_usd_total` as document `analysis_cost_usd`, including
 re-triage spend. Render it once per batch rather than multiplying document
 expense by language jobs. Missing cost must not prevent the batch from rendering.
 The value estimates reported usage and excludes unknown provider charges.
+
+
+## 13. Decision record: measured triage convergence (DT-100)
+
+DT-93 made turn exhaustion terminal to avoid paying up to three times for a
+loop. The original plan described roughly threefold savings and a historical
+third-attempt success; those are prior observations, not a controlled retry-policy
+comparison. DT-100 addressed convergence before revisiting that policy.
+
+Safe tool telemetry and a bounded, edge-weighted outline make the failure
+observable and the first turn informed. Instructions name only the two real tools.
+The default is now 16 turns (maximum configurable 20); tool output bounds and
+all public/error contracts remain unchanged. The earlier eight-turn default in
+the DT-93 record is historical.
+
+Five live gpt-4o-mini documents at 16 turns produced accepted plans on 1/5 both
+before and after. Mean triage usage estimates rose from $0.00244629 to $0.00689094.
+The outline did not demonstrate a convergence gain. Three baseline complex-DOCX
+runs all exhausted their budgets; searches dominated some runs, repeated reads
+others. Keyword lengths alone cannot prove what the model searched for.
+
+The owner approved a separate internal TRIAGE_MODEL setting, default gpt-4o,
+while OPENAI_MODEL retains gpt-4o-mini for bulk/glossary. Terminal exhaustion stays
+fail-fast and mini remains an explicit triage opt-in. Five live gpt-4o runs at
+16 turns all produced accepted plans, averaging 3.8 requests and $0.03404600 per
+document. This is more expensive triage than mini, but bulk's default is unchanged.
+The five-file sample is not a representative success-rate measurement. The owner
+also requested checking Luna6/5.6 alternatives; measurements are recorded in
+[DT-100 execution](docs/plans/2026-10-03-triage-convergence-execution.md).
+
+Both requested Luna candidates accepted 5/5 plans at 16 turns. Luna6 used 3.8 mean
+requests and $0.000998178 with captured cache-write premium; Luna5.6 used 4.0 and
+$0.002089002. They are tested opt-ins, not an automatic default replacement.
+The five-file sample measures convergence, not classification or translation
+quality. Production cost estimates exclude write premiums; the evaluation records
+both estimates. Legacy provider/public contracts remain unchanged.

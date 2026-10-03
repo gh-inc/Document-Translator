@@ -1,0 +1,169 @@
+[
+  {
+    "file": "sample_en.pdf",
+    "triage_status": "ok",
+    "domain": "communication",
+    "terms_count": 2,
+    "tokens_in": 3434,
+    "tokens_out": 212,
+    "cached_tokens_in": 0,
+    "requests": 4,
+    "model": "gpt-4o",
+    "cost_usd_total": 0.010705,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 3,
+        "count": 5,
+        "returned": 5,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 10,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.pdf",
+    "triage_status": "ok",
+    "domain": "philosophy",
+    "terms_count": 0,
+    "tokens_in": 23116,
+    "tokens_out": 183,
+    "cached_tokens_in": 16768,
+    "requests": 4,
+    "model": "gpt-4o",
+    "cost_usd_total": 0.03866,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 33,
+        "count": 3,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 0,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.pdf",
+    "triage_status": "ok",
+    "domain": "philosophy",
+    "terms_count": 0,
+    "tokens_in": 19623,
+    "tokens_out": 189,
+    "cached_tokens_in": 12416,
+    "requests": 3,
+    "model": "gpt-4o",
+    "cost_usd_total": 0.0354275,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 66,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.docx",
+    "triage_status": "ok",
+    "domain": "philosophical",
+    "terms_count": 3,
+    "tokens_in": 25489,
+    "tokens_out": 251,
+    "cached_tokens_in": 18304,
+    "requests": 4,
+    "model": "gpt-4o",
+    "cost_usd_total": 0.0433525,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 35,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 42,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.docx",
+    "triage_status": "ok",
+    "domain": "philosophy",
+    "terms_count": 3,
+    "tokens_in": 24742,
+    "tokens_out": 231,
+    "cached_tokens_in": 17664,
+    "requests": 4,
+    "model": "gpt-4o",
+    "cost_usd_total": 0.042085,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 3,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 42,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 3,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      }
+    ]
+  }
+]

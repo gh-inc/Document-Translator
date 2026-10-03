@@ -37,7 +37,7 @@ def test_triage_limits_have_defaults_environment_values_and_bounds(monkeypatch) 
         monkeypatch.delenv(name, raising=False)
 
     settings = Settings()
-    assert settings.triage_max_turns == 8
+    assert settings.triage_max_turns == 16
     assert settings.triage_timeout_seconds == 60.0
 
     monkeypatch.setenv("TRIAGE_MAX_TURNS", "3")
@@ -92,6 +92,7 @@ def test_provider_settings_defaults_and_secret_repr(monkeypatch) -> None:
     for name in (
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
+        "TRIAGE_MODEL",
         "FAKE_FAIL_RATE",
         "FAKE_LATENCY_MS",
         "FAKE_FAIL_MODE",
@@ -103,6 +104,7 @@ def test_provider_settings_defaults_and_secret_repr(monkeypatch) -> None:
 
     assert settings.openai_api_key == SecretStr("")
     assert settings.openai_model == "gpt-4o-mini"
+    assert settings.triage_model == "gpt-4o"
     assert settings.fake_fail_rate == 0.0
     assert settings.fake_latency_ms == 0
     assert settings.fake_fail_mode == "timeout"
@@ -116,6 +118,7 @@ def test_provider_settings_defaults_and_secret_repr(monkeypatch) -> None:
 def test_provider_settings_read_environment_and_validate_values(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env-test-value")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setenv("TRIAGE_MODEL", "gpt-4o-mini")
     monkeypatch.setenv("FAKE_FAIL_RATE", "0.25")
     monkeypatch.setenv("FAKE_LATENCY_MS", "10")
     monkeypatch.setenv("FAKE_FAIL_MODE", "500")
@@ -125,6 +128,7 @@ def test_provider_settings_read_environment_and_validate_values(monkeypatch) -> 
 
     assert settings.openai_api_key.get_secret_value() == "sk-env-test-value"
     assert settings.openai_model == "gpt-4o"
+    assert settings.triage_model == "gpt-4o-mini"
     assert settings.fake_fail_rate == 0.25
     assert settings.fake_latency_ms == 10
     assert settings.fake_fail_mode == "500"
@@ -138,6 +142,22 @@ def test_provider_settings_read_environment_and_validate_values(monkeypatch) -> 
         Settings(fake_latency_ms=-1)
     with pytest.raises(ValidationError):
         Settings(fake_fail_mode="400")
+
+
+def test_triage_and_bulk_model_settings_are_independent(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("TRIAGE_MODEL", raising=False)
+    assert (Settings().openai_model, Settings().triage_model) == ("gpt-4o-mini", "gpt-4o")
+
+    monkeypatch.setenv("OPENAI_MODEL", "bulk-only")
+    assert (Settings().openai_model, Settings().triage_model) == ("bulk-only", "gpt-4o")
+
+    monkeypatch.delenv("OPENAI_MODEL")
+    monkeypatch.setenv("TRIAGE_MODEL", "triage-only")
+    assert (Settings().openai_model, Settings().triage_model) == ("gpt-4o-mini", "triage-only")
+
+    with pytest.raises(ValidationError):
+        Settings(triage_model="")
 
 
 def test_settings_dotenv_ignores_unrelated_deployment_variables(tmp_path: Path) -> None:

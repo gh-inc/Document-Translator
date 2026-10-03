@@ -22,6 +22,9 @@ from structlog.testing import capture_logs
 from app.adapters.llm import triage_agent
 from app.adapters.llm.fake_triage_agent import MAX_TERMS, FakeTriageAgent
 from app.adapters.llm.triage_agent import (
+    _INSTRUCTIONS,
+    _OUTLINE_HEAD_CHARS,
+    _OUTLINE_MAX_BLOCKS,
     DEFAULT_MAX_TURNS,
     DEFAULT_TIMEOUT_SECONDS,
     MAX_READ_BLOCKS,
@@ -29,6 +32,7 @@ from app.adapters.llm.triage_agent import (
     MAX_SNIPPET_CHARS,
     MAX_TOOL_OUTPUT_CHARS,
     OpenAITriageAgent,
+    _document_outline,
     read_blocks,
     search_blocks,
 )
@@ -87,6 +91,41 @@ def _output() -> TriageAgentOutput:
             source_language="en", domain="business", register="neutral", terms=["Alpha"]
         ),
     )
+
+
+def test_outline_is_bounded_edge_weighted_and_uses_sorted_sparse_sequences() -> None:
+    document = _document([f"Paragraph {i} " + "x" * 100 for i in range(500)])
+    for index, block in enumerate(document.blocks):
+        block.seq = index * 3
+    document.blocks.reverse()
+
+    outline = _document_outline(document)
+
+    assert outline["block_count"] == 500
+    assert (outline["first_seq"], outline["last_seq"]) == (0, 1497)
+    blocks = outline["blocks"]
+    assert len(blocks) == _OUTLINE_MAX_BLOCKS == 60
+    assert [item["seq"] for item in blocks] == [
+        *(index * 3 for index in range(30)),
+        *(index * 3 for index in range(470, 500)),
+    ]
+    assert all(len(item["head"]) <= _OUTLINE_HEAD_CHARS == 80 for item in blocks)
+    assert "must_not_inspect" not in json.dumps(outline)
+
+
+def test_outline_reports_script_hints_from_entire_document() -> None:
+    document = _document(["Hello", "Привет", "مرحبا", "你好"])
+    outline = _document_outline(document)
+    assert outline["scripts"] == {"latin": 5, "cyrillic": 6, "arabic": 5, "cjk": 2}
+    assert [item["seq"] for item in outline["blocks"]] == [0, 1, 2, 3]
+
+
+def test_instructions_name_only_existing_tools_and_use_outline() -> None:
+    assert "summaries" not in _INSTRUCTIONS
+    assert "glossary sections" not in _INSTRUCTIONS
+    assert "read_blocks" in _INSTRUCTIONS and "search_blocks" in _INSTRUCTIONS
+    assert "outline" in _INSTRUCTIONS
+    assert "limited number of turns" in _INSTRUCTIONS
 
 
 async def test_read_blocks_uses_sequence_interval_and_returns_only_text_and_seq() -> None:
@@ -153,11 +192,50 @@ async def test_navigation_budget_tracks_successful_reads() -> None:
     assert budget.successful_reads == 1
 
 
+async def test_tool_calls_are_logged_without_document_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run(agent: Any, **kwargs: Any) -> object:
+        document = kwargs["context"].context
+        await _invoke(agent.tools[0], document, start_seq=0, count=2)
+        await _invoke(agent.tools[1], document, keyword="Alpha")
+        return SimpleNamespace(final_output=_output())
+
+    monkeypatch.setattr(triage_agent.Runner, "run", run)
+    with capture_logs() as logs:
+        await OpenAITriageAgent(client=object()).analyze(_document(["Alpha", "Beta"]))
+
+    calls = [log for log in logs if log["event"] == "triage_tool_call"]
+    assert calls == [
+        {
+            "event": "triage_tool_call",
+            "log_level": "info",
+            "tool": "read_blocks",
+            "start_seq": 0,
+            "count": 2,
+            "returned": 2,
+        },
+        {
+            "event": "triage_tool_call",
+            "log_level": "info",
+            "tool": "search_blocks",
+            "keyword_length": 5,
+            "returned": 1,
+        },
+    ]
+    assert "Alpha" not in json.dumps(logs)
+    assert "Beta" not in json.dumps(logs)
+    assert "keyword" not in calls[1]
+    assert "source_text" not in json.dumps(logs)
+
+
 async def test_fake_plan_is_repeatable_and_uses_ordered_unique_capitalized_terms() -> None:
     document = _document(["Beta Alpha Beta", "Gamma delta"])
     document.blocks.reverse()
     fake = FakeTriageAgent(
-        settings=Settings(openai_model="configured-model"), fail_rate=0.0, latency_ms=0
+        settings=Settings(openai_model="bulk-model", triage_model="configured-model"),
+        fail_rate=0.0,
+        latency_ms=0,
     )
 
     first = await fake.analyze(document)
@@ -253,7 +331,10 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
 
     monkeypatch.setattr(triage_agent.Runner, "run", run)
     document = _document(start_seq=10)
-    adapter = OpenAITriageAgent(settings=Settings(openai_model="configured-model"), client=object())
+    adapter = OpenAITriageAgent(
+        settings=Settings(openai_model="bulk-model", triage_model="configured-model"),
+        client=object(),
+    )
 
     result = await adapter.analyze(document)
 
@@ -272,6 +353,12 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
     prompt = json.loads(captured["input"])
     assert prompt["block_count"] == 3
     assert (prompt["first_seq"], prompt["last_seq"]) == (10, 12)
+    assert prompt["blocks"] == [
+        {"seq": 10, "head": "Alpha report"},
+        {"seq": 11, "head": "Beta glossary"},
+        {"seq": 12, "head": "Conclusion"},
+    ]
+    assert "text_characters" not in prompt
     assert "untrusted" not in captured["input"]
     agent = captured["agent"]
     assert agent.model.model == "configured-model"
@@ -282,6 +369,76 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
     assert agent.reset_tool_choice is True
     assert [tool.name for tool in agent.tools] == ["read_blocks", "search_blocks"]
     assert "private" in agent.instructions
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [("  gpt-4o  ", "gpt-4o"), ("   ", "gpt-4o")],
+)
+async def test_triage_model_is_trimmed_or_uses_its_own_fallback(
+    monkeypatch: pytest.MonkeyPatch, configured: str, expected: str
+) -> None:
+    async def run(agent: Any, **kwargs: Any) -> object:
+        assert agent.model.model == expected
+        await _invoke(agent.tools[0], kwargs["context"].context, start_seq=0, count=1)
+        return SimpleNamespace(final_output=_output())
+
+    monkeypatch.setattr(triage_agent.Runner, "run", run)
+    settings = Settings(openai_model="bulk-model", triage_model=configured)
+    real = await OpenAITriageAgent(settings=settings, client=object()).analyze(_document())
+    fake = await FakeTriageAgent(settings=settings, fail_rate=0.0).analyze(_document())
+    assert real.model == fake.model == expected
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["gpt-6-luna", "gpt-5.6-luna", "gpt-4o", "gpt-4o-mini"],
+)
+async def test_triage_model_settings_reach_chat_completions_wire(model: str) -> None:
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        return httpx2.Response(
+            400,
+            request=request,
+            json={"error": {"message": "offline stop", "type": "invalid_request_error"}},
+        )
+
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    sdk_client = openai.AsyncOpenAI(
+        api_key="offline-test-key",
+        base_url="https://offline.invalid/v1",
+        max_retries=0,
+        http_client=http_client,
+    )
+    sdk_client._platform = "Linux"
+    try:
+        with pytest.raises(ProviderError) as raised:
+            await OpenAITriageAgent(
+                settings=Settings(triage_model=model), client=sdk_client
+            ).analyze(_document())
+    finally:
+        await sdk_client.close()
+
+    assert raised.value.error_code == ErrorCode.PROVIDER_BAD_REQUEST
+    assert len(requests) == 1
+    body = requests[0]
+    assert body["model"] == model
+    assert body["tool_choice"] == "required"
+    assert body["parallel_tool_calls"] is False
+    assert {tool["function"]["name"] for tool in body["tools"]} == {
+        "read_blocks",
+        "search_blocks",
+    }
+    if model in {"gpt-6-luna", "gpt-5.6-luna"}:
+        assert body["reasoning_effort"] == "none"
+        assert body["max_completion_tokens"] == 2000
+        assert "max_tokens" not in body
+    else:
+        assert body["max_tokens"] == 2000
+        assert "max_completion_tokens" not in body
+        assert "reasoning_effort" not in body
 
 
 @pytest.mark.parametrize("final_output", [_output(), {"plan": {}}, "invalid", None])
@@ -347,7 +504,7 @@ async def test_openai_returns_aggregated_usage_across_multiple_requests(
 
     monkeypatch.setattr(triage_agent.Runner, "run", run)
     result = await OpenAITriageAgent(
-        settings=Settings(openai_model="configured-model"), client=object()
+        settings=Settings(triage_model="configured-model"), client=object()
     ).analyze(_document())
 
     assert (result.tokens_in, result.tokens_out, result.cached_tokens_in, result.requests) == (
@@ -363,14 +520,18 @@ async def test_turn_budget_exhaustion_is_terminal_and_logged(
 ) -> None:
     aggregate = _aggregated_usage()
 
-    async def run(*args: Any, **kwargs: Any) -> object:
+    async def run(agent: Any, **kwargs: Any) -> object:
+        document = kwargs["context"].context
+        await _invoke(agent.tools[0], document, start_seq=0, count=2)
+        await _invoke(agent.tools[0], document, start_seq=99, count=2)
+        await _invoke(agent.tools[1], document, keyword="Alpha")
         kwargs["context"].usage.add(aggregate)
         raise MaxTurnsExceeded("sensitive run details")
 
     monkeypatch.setattr(triage_agent.Runner, "run", run)
     with capture_logs() as logs, pytest.raises(TriageTerminalError) as raised:
         await OpenAITriageAgent(
-            settings=Settings(openai_model="configured-model"),
+            settings=Settings(triage_model="configured-model"),
             client=object(),
             max_turns=1,
         ).analyze(_document())
@@ -382,7 +543,12 @@ async def test_turn_budget_exhaustion_is_terminal_and_logged(
     assert (raised.value.tokens_in, raised.value.tokens_out) == (250, 28)
     assert raised.value.cached_tokens_in == 50
     assert raised.value.requests == 2
-    assert any(log["event"] == "triage_turn_budget_exhausted" for log in logs)
+    exhausted = next(log for log in logs if log["event"] == "triage_turn_budget_exhausted")
+    assert exhausted["tool_calls"] == 3
+    assert exhausted["read_calls"] == 2
+    assert exhausted["search_calls"] == 1
+    assert "Alpha" not in json.dumps(logs)
+    assert "sensitive" not in json.dumps(logs)
 
 
 async def test_triage_service_guard_stays_above_configured_agent_timeout(
@@ -428,7 +594,7 @@ async def test_openai_retains_usage_when_runner_fails_after_a_response(
     monkeypatch.setattr(triage_agent.Runner, "run", run)
     with pytest.raises(ProviderError) as raised:
         await OpenAITriageAgent(
-            settings=Settings(openai_model="configured-model"), client=object()
+            settings=Settings(triage_model="configured-model"), client=object()
         ).analyze(_document())
 
     assert raised.value.error_code == ErrorCode.PROVIDER_INVALID_RESPONSE

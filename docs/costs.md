@@ -293,3 +293,44 @@ Keep the two bases separate, keep every estimate labelled as an estimate, and do
 not fold the Compose database's `cost_usd` columns into provider spend — those are
 fake-provider estimates and reading them as billing is the specific mistake this
 document exists to prevent.
+
+## DT-100 triage convergence measurement (2026-10-04)
+
+Five fixed PDF/DOCX samples were analyzed once before and once after a bounded
+outline and corrected instructions, using gpt-4o-mini, 16 turns, 60-second timeout
+and no retries. Both prompts achieved 1/5 (20%) accepted plans. Mean reported-usage
+cost increased from $0.00244629 to $0.00689094 (about 2.82 times); mean requests
+were 14.0 and 14.2 respectively. The before run already used 16 turns; this is
+not an isolated measurement of the deployment-default increase from 8 to 16.
+
+All seven baseline runs (including three complex-DOCX repeats) cost $0.01829520;
+five after runs cost $0.03445470; combined known provider-usage estimate is
+$0.05274990. Cached tokens receive snapshot discounted pricing. These are
+reported-usage estimates, not invoices. Development-agent tokens are separate.
+No bulk was translated on this corpus, so its triage share of total document
+spend is unmeasured; the historical FLORES ratio cannot be transferred here.
+No cost saving or success-rate improvement is claimed. This tiny corpus does not
+establish a population success rate. The owner subsequently approved independent TRIAGE_MODEL=gpt-4o; see below.
+
+See [execution and per-file measurements](plans/2026-10-03-triage-convergence-execution.md).
+
+Five follow-up runs with independent TRIAGE_MODEL=gpt-4o produced accepted plans
+on 5/5 documents, averaging 3.8 requests and $0.03404600 each ($0.17023000 total).
+Bulk remains gpt-4o-mini and was not translated during this triage evaluation.
+These figures supersede the earlier assumption of about $0.008 per document for
+this corpus, which came from another measurement. New Luna estimates use standard
+short-context snapshot rates. Cache-write premiums and regional/long-context
+pricing are outside the production estimator; the Luna evaluation additionally
+captures SDK cache-write tokens for a separately labelled adjusted estimate.
+These estimates remain distinct from provider invoices.
+
+The requested Luna comparison achieved 5/5 accepted plans for each candidate.
+Luna6 averaged $0.000861388 in the service estimator and $0.000998178 after
+adding the measured cache-write premium. Luna5.6 averaged $0.001821832 and
+$0.002089002 respectively. Request means were 3.8 and 4.0. Maximum per-request
+input was below 8K, so the >272K rate tier does not apply. These are small-corpus
+convergence observations, not representative quality or billing comparisons.
+Independent TRIAGE_MODEL defaults to gpt-4o; both Luna IDs are tested opt-ins.
+Official pricing/compatibility sources:
+[GPT6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and
+[GPT5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna).

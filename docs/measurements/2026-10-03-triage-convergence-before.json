@@ -1,0 +1,793 @@
+[
+  {
+    "file": "sample_en.pdf",
+    "triage_status": "ok",
+    "domain": "project management",
+    "terms_count": 3,
+    "tokens_in": 4606,
+    "tokens_out": 186,
+    "cached_tokens_in": 0,
+    "requests": 6,
+    "cost_usd_total": 0.0008025,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 4,
+        "returned": 4,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 2,
+        "event": "triage_tool_call"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.pdf",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 27161,
+    "tokens_out": 268,
+    "cached_tokens_in": 22144,
+    "requests": 16,
+    "cost_usd_total": 0.00257415,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 28,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 12,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 8,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 10,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 14,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 5,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 10,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 2,
+        "search_calls": 14,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.pdf",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 44352,
+    "tokens_out": 289,
+    "cached_tokens_in": 37760,
+    "requests": 16,
+    "cost_usd_total": 0.003994200000000001,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 62,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 6,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 20,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 10,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 30,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 50,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 40,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 57,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 46,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 15,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 11,
+        "search_calls": 5,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.docx",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 25985,
+    "tokens_out": 265,
+    "cached_tokens_in": 21632,
+    "requests": 16,
+    "cost_usd_total": 0.00243435,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 14,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 8,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 5,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 12,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 8,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 5,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 2,
+        "search_calls": 14,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  },
+  {
+    "file": "platon-gliph.docx",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 25247,
+    "tokens_out": 276,
+    "cached_tokens_in": 20352,
+    "requests": 16,
+    "cost_usd_total": 0.0024262499999999996,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 12,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 10,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 12,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 8,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 28,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 20,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 12,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 6,
+        "search_calls": 10,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.docx",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 28706,
+    "tokens_out": 277,
+    "cached_tokens_in": 23808,
+    "requests": 16,
+    "cost_usd_total": 0.0026864999999999997,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 28,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 5,
+        "returned": 0,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 9,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 8,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 20,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 2,
+        "count": 2,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 7,
+        "search_calls": 9,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  },
+  {
+    "file": "platon-complex.docx",
+    "triage_status": "degraded",
+    "domain": "general",
+    "terms_count": 0,
+    "error_code": "provider_invalid_response",
+    "tokens_in": 35515,
+    "tokens_out": 286,
+    "cached_tokens_in": 28288,
+    "requests": 16,
+    "cost_usd_total": 0.0033772499999999996,
+    "events": [
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 36,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 7,
+        "returned": 5,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 4,
+        "returned": 2,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 10,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 15,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 15,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 28,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 24,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 34,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 14,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 6,
+        "returned": 7,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 28,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 0,
+        "count": 8,
+        "returned": 8,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "read_blocks",
+        "start_seq": 43,
+        "count": 8,
+        "returned": 1,
+        "event": "triage_tool_call"
+      },
+      {
+        "tool": "search_blocks",
+        "keyword_length": 11,
+        "returned": 3,
+        "event": "triage_tool_call"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "max_turns": 16,
+        "tool_calls": 16,
+        "read_calls": 10,
+        "search_calls": 6,
+        "event": "triage_turn_budget_exhausted"
+      }
+    ]
+  }
+]

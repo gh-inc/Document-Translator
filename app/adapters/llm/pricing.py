@@ -11,6 +11,11 @@ _PRICES_USD_PER_MILLION_TOKENS: dict[str, dict[str, float]] = {
     # and https://developers.openai.com/api/docs/models/gpt-4o
     "gpt-4o-mini": {"input": 0.150, "cached_input": 0.075, "output": 0.600},
     "gpt-4o": {"input": 2.500, "cached_input": 1.250, "output": 10.000},
+    # Standard short-context rates verified 2026-10-04:
+    # https://developers.openai.com/api/docs/models/gpt-6-luna
+    # https://developers.openai.com/api/docs/models/gpt-5.6-luna
+    "gpt-6-luna": {"input": 0.100, "cached_input": 0.010, "output": 0.500},
+    "gpt-5.6-luna": {"input": 0.200, "cached_input": 0.020, "output": 1.200},
 }
 
 

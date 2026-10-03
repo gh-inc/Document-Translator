@@ -1,0 +1,69 @@
+import asyncio
+import json
+import os
+from pathlib import Path
+import pytest
+import structlog
+from app.adapters.llm import triage_agent
+from app.config import Settings
+from app.adapters.formats.docx import DocxExtractor
+from app.adapters.formats.pdf import PdfExtractor
+from app.adapters.llm.triage_agent import OpenAITriageAgent
+from app.adapters.llm.pricing import ModelCostCalculator
+from app.core.errors import ProviderError
+
+@pytest.mark.live
+@pytest.mark.asyncio
+async def test_measure():
+    phase = os.environ['DT100_PHASE']
+    rows = []
+    events = []
+    usage_details = {}
+    original_usage_values = triage_agent._usage_values
+    def capture_usage(usage):
+        usage_details['cache_write_tokens'] = getattr(
+            getattr(usage, 'input_tokens_details', None), 'cache_write_tokens', 0
+        ) or 0
+        usage_details['request_input_tokens'] = [
+            getattr(item, 'input_tokens', 0) for item in getattr(usage, 'request_usage_entries', [])
+        ]
+        return original_usage_values(usage)
+    triage_agent._usage_values = capture_usage
+    def capture(logger, method, event):
+        if event.get('event') in ('triage_tool_call', 'triage_turn_budget_exhausted'):
+            allowed = {'event','tool','start_seq','count','returned','keyword_length','model','max_turns','tool_calls','read_calls','search_calls'}
+            assert set(event) <= allowed, 'unexpected telemetry fields'
+            events.append(dict(event))
+        raise structlog.DropEvent
+    structlog.configure(processors=[capture])
+    model = os.environ.get('DT100_MODEL', 'gpt-4o')
+    settings = Settings(_env_file='.env', openai_model='gpt-4o-mini', triage_model=model)
+    names = ['sample_en.pdf', 'platon-complex.pdf', 'platon-gliph.pdf', 'platon-complex.docx', 'platon-gliph.docx']
+    if phase == 'before':
+        names += ['platon-complex.docx', 'platon-complex.docx']
+    for name in names:
+        events.clear()
+        usage_details.clear()
+        path = Path('samples') / name
+        extractor = DocxExtractor() if path.suffix == '.docx' else PdfExtractor()
+        document = await extractor.extract(path, 'dt100-measure')
+        agent = OpenAITriageAgent(settings=settings, max_turns=16)
+        try:
+            result = await agent.analyze(document)
+            row = dict(file=name, triage_status=result.plan.triage_status.value, domain=result.plan.domain, terms_count=len(result.plan.terms))
+        except ProviderError as error:
+            result = error
+            row = dict(file=name, triage_status='degraded', domain='general', terms_count=0, error_code=error.error_code.value)
+        finally:
+            await agent.aclose()
+        row.update(tokens_in=result.tokens_in, tokens_out=result.tokens_out, cached_tokens_in=result.cached_tokens_in, requests=result.requests)
+        row['model'] = model
+        row['cost_usd_total'] = ModelCostCalculator().estimate_usage(model,result.tokens_in,result.tokens_out,result.cached_tokens_in)
+        row.update(usage_details)
+        if model in {'gpt-6-luna', 'gpt-5.6-luna'}:
+            rate = 0.10 if model == 'gpt-6-luna' else 0.20
+            row['cost_usd_with_cache_write_premium'] = row['cost_usd_total'] + row['cache_write_tokens'] * rate * 0.25 / 1_000_000
+        row['events'] = list(events)
+        rows.append(row)
+        Path(f'/tmp/dt100-{phase}.json').write_text(json.dumps(rows, indent=2))
+        print(json.dumps({k:v for k,v in row.items() if k != 'events'}), flush=True)
