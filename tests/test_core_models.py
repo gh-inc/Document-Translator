@@ -28,6 +28,7 @@ from app.core.models import (
     RenderResult,
     TranslationPlan,
     TriageAgentOutput,
+    TriageResult,
     TriageStatus,
 )
 
@@ -72,6 +73,17 @@ MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
         },
     ),
     (TranslationPlan, PLAN_DATA),
+    (
+        TriageResult,
+        {
+            "plan": PLAN_DATA,
+            "model": "gpt-4o-mini",
+            "tokens_in": 120,
+            "tokens_out": 30,
+            "cached_tokens_in": 80,
+            "requests": 2,
+        },
+    ),
     (TriageAgentOutput, {"reasoning": "English text in sampled sections", "plan": PLAN_DATA}),
     (
         ChunkRequest,
@@ -303,3 +315,11 @@ def test_analyzing_status_roundtrips_json() -> None:
         DocumentRecord.model_validate_json(document.model_dump_json()).status
         is DocumentStatus.ANALYZING
     )
+
+
+def test_triage_usage_defaults_and_negative_counts() -> None:
+    result = TriageResult(plan=TranslationPlan.model_validate(PLAN_DATA), model="gpt-4o-mini")
+    assert result.tokens_in == result.tokens_out == result.cached_tokens_in == result.requests == 0
+    for field in ("tokens_in", "tokens_out", "cached_tokens_in", "requests"):
+        with pytest.raises(ValidationError):
+            TriageResult.model_validate({"plan": PLAN_DATA, "model": "gpt-4o-mini", field: -1})

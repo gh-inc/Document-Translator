@@ -41,9 +41,19 @@ async def metrics(service: Annotated[HealthService, Depends(get_health_service)]
         jobs.labels(status=status.value).set(counts.get(status.value, 0))
     for name, description in (
         ("llm_cost_usd_total", "Known billed provider cost in USD"),
+        ("llm_triage_cost_usd_total", "Known triage provider cost in USD"),
         ("llm_errors_total", "Persisted unsuccessful provider attempts"),
         ("cache_hits_total", "Cache hits; persistence instrumentation is deferred"),
     ):
         metric = Counter(name, description, registry=registry)
         metric.inc(cast(float, snapshot[name]))
+    triage_tokens = Counter(
+        "llm_triage_tokens_total",
+        "Provider-reported triage tokens across all document analysis runs",
+        ["direction"],
+        registry=registry,
+    )
+    token_totals = cast(dict[str, int], snapshot["llm_triage_tokens_total"])
+    for direction in ("input", "output"):
+        triage_tokens.labels(direction=direction).inc(token_totals.get(direction, 0))
     return Response(generate_latest(registry), headers={"Content-Type": CONTENT_TYPE_LATEST})

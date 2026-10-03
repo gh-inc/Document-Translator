@@ -16,6 +16,7 @@ from app.adapters.persistence.repositories import (
     SqliteJobExecutionRepository,
     SqliteTranslationCacheRepository,
 )
+from app.adapters.persistence.triage import TriagePersistence
 from app.core.models import (
     AttemptOutcome,
     Block,
@@ -202,9 +203,158 @@ async def test_document_lifecycle_roundtrips_opaque_metadata_and_immutable_analy
     assert reread_analysis == saved_analysis
     assert (await document_repository.get_analysis("doc-1")) == saved_analysis
     assert reread_analysis.created_at.tzinfo == UTC
+    assert reread_analysis.tokens_in_total == 0
+    assert reread_analysis.tokens_out_total == 0
+    assert reread_analysis.cost_usd_total == 0.0
     # Repository instances borrow the injected connection; reads leave it open.
     async with connection.execute("SELECT 1") as cursor:
         assert (await cursor.fetchone())[0] == 1
+
+
+async def test_save_analysis_overwrites_current_usage_and_increments_totals(
+    repositories: tuple[
+        SqliteDocumentRepository,
+        SqliteJobExecutionRepository,
+        SqliteTranslationCacheRepository,
+        aiosqlite.Connection,
+    ],
+) -> None:
+    document_repository, _, _, connection = repositories
+    degraded = TranslationPlan(
+        source_language="en",
+        domain="general",
+        register="neutral",
+        triage_status=TriageStatus.DEGRADED,
+    )
+    successful = TranslationPlan(
+        source_language="en",
+        domain="legal",
+        register="formal",
+        triage_status=TriageStatus.OK,
+    )
+    async with transaction(connection):
+        await document_repository.create_document(
+            "doc-usage", "source.pdf", "pdf", 123, "/uploads/doc-usage.pdf"
+        )
+        await document_repository.save_analysis(
+            "doc-usage", degraded, tokens_in=20, tokens_out=4, cost_usd=0.25
+        )
+        first_retriage = await document_repository.save_analysis(
+            "doc-usage", successful, tokens_in=10, tokens_out=3, cost_usd=0.15
+        )
+        second_retriage = await document_repository.save_analysis(
+            "doc-usage", successful, tokens_in=5, tokens_out=2, cost_usd=0.05
+        )
+
+    assert (first_retriage.tokens_in, first_retriage.tokens_out, first_retriage.cost_usd) == (
+        10,
+        3,
+        0.15,
+    )
+    assert (
+        first_retriage.tokens_in_total,
+        first_retriage.tokens_out_total,
+        first_retriage.cost_usd_total,
+    ) == (30, 7, 0.4)
+    assert (second_retriage.tokens_in, second_retriage.tokens_out, second_retriage.cost_usd) == (
+        5,
+        2,
+        0.05,
+    )
+    assert (
+        second_retriage.tokens_in_total,
+        second_retriage.tokens_out_total,
+        second_retriage.cost_usd_total,
+    ) == (35, 9, 0.45)
+
+
+async def test_degraded_analysis_delete_and_republish_keeps_complete_totals(
+    repositories: tuple[
+        SqliteDocumentRepository,
+        SqliteJobExecutionRepository,
+        SqliteTranslationCacheRepository,
+        aiosqlite.Connection,
+    ],
+) -> None:
+    document_repository, _, _, connection = repositories
+    triage_persistence = TriagePersistence(connection)
+    degraded = TranslationPlan(
+        source_language="en",
+        domain="general",
+        register="neutral",
+        triage_status=TriageStatus.DEGRADED,
+    )
+    successful = TranslationPlan(
+        source_language="en",
+        domain="business",
+        register="formal",
+        triage_status=TriageStatus.OK,
+    )
+    async with transaction(connection):
+        await document_repository.create_document(
+            "doc-republish", "source.pdf", "pdf", 123, "/uploads/doc-republish.pdf"
+        )
+        await document_repository.save_analysis(
+            "doc-republish", degraded, tokens_in=8, tokens_out=2, cost_usd=0.12
+        )
+    previous = await document_repository.get_analysis("doc-republish")
+    assert previous is not None
+
+    async with transaction(connection):
+        await triage_persistence.discard_degraded_analysis("doc-republish")
+        republished = await document_repository.save_analysis(
+            "doc-republish",
+            successful,
+            tokens_in=5,
+            tokens_out=1,
+            cost_usd=0.08,
+            tokens_in_total=previous.tokens_in_total + 5,
+            tokens_out_total=previous.tokens_out_total + 1,
+            cost_usd_total=previous.cost_usd_total + 0.08,
+        )
+
+    assert (republished.tokens_in, republished.tokens_out, republished.cost_usd) == (
+        5,
+        1,
+        0.08,
+    )
+    assert (
+        republished.tokens_in_total,
+        republished.tokens_out_total,
+        republished.cost_usd_total,
+    ) == (13, 3, 0.2)
+
+
+async def test_successful_analysis_zero_usage_reuse_does_not_double_count(
+    repositories: tuple[
+        SqliteDocumentRepository,
+        SqliteJobExecutionRepository,
+        SqliteTranslationCacheRepository,
+        aiosqlite.Connection,
+    ],
+) -> None:
+    document_repository, _, _, connection = repositories
+    plan = TranslationPlan(
+        source_language="en",
+        domain="general",
+        register="neutral",
+        triage_status=TriageStatus.OK,
+    )
+    async with transaction(connection):
+        await document_repository.create_document(
+            "doc-reuse", "source.pdf", "pdf", 123, "/uploads/doc-reuse.pdf"
+        )
+        original = await document_repository.save_analysis(
+            "doc-reuse", plan, tokens_in=12, tokens_out=3, cost_usd=0.2
+        )
+        reused = await document_repository.save_analysis("doc-reuse", plan)
+
+    assert reused == original
+    assert (reused.tokens_in_total, reused.tokens_out_total, reused.cost_usd_total) == (
+        12,
+        3,
+        0.2,
+    )
 
 
 async def test_ordinary_mutations_require_caller_transaction(

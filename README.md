@@ -27,7 +27,7 @@ linguists who need computer-assisted translation (CAT) tools and workflows.
 | Acceptance criterion | Implementation and known limit |
 | --- | --- |
 | Resilience | SQLite WAL and chunk leases let a restarted worker resume from committed work after `kill -9`. A committed translation is not repeated; a provider timeout with an unknown outcome can still cause a duplicate invocation and unreported billing. |
-| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. The `cache_hits_total` metric is deferred and stays zero; persisted spend also omits triage usage and billing from ambiguous invocations. |
+| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. The `cache_hits_total` metric is deferred and stays zero; document triage spend is persisted separately from job spend; billing from ambiguous invocations with unknown usage remains excluded. |
 | Multi-language | One submission creates independently tracked jobs per target language, with separate progress and cost. A failure in one language does not stop the others. |
 
 | Hard requirement | Where it lives |
@@ -283,8 +283,8 @@ Offline backend tests use fake providers, real temporary WAL databases,
 FastMCP's in-memory client and worker-produced PDF/DOCX artifacts. The explicit
 measurement command rejects a fake provider and reports JSON plus a readable
 table. Without `--reference`, chrF is labeled as back-translation, a coarse
-information-preservation proxy. Persisted bulk attempt cost excludes triage and
-unknown transport usage; one job duration cannot establish a population p95 or
+information-preservation proxy. Persisted bulk attempt cost excludes triage; document-level triage is recorded
+separately with cached-aware pricing. Unknown transport usage remains excluded; one job duration cannot establish a population p95 or
 a parallelism comparison. Measurements and gaps are recorded in
 [DECISIONS.md](DECISIONS.md).
 
@@ -301,7 +301,7 @@ docker compose logs --tail=100 worker web mcp
 | --- | --- | --- |
 | Jobs remain queued | `docker compose ps worker`; compare `DATABASE_PATH`, `UPLOAD_STORAGE_PATH`, `OUTPUT_STORAGE_PATH` in your Compose configuration across processes | Start/recreate the worker with `docker compose up -d worker`; use the same `/data` volume. An idle `/readyz` 200 alone does not prove worker liveness. |
 | Jobs remain running | Inspect chunk leases using the SQL below and worker logs; normal job/chunk leases last 60 seconds and heartbeat runs every 10 seconds | Restart a dead worker and allow the outstanding job/chunk leases to expire; committed chunks resume from cache. Avoid editing states directly. |
-| Cost rises | `/metrics` exposes `llm_cost_usd_total`; query attempts by outcome and retry number below | Check retries and `MAX_COST_PER_JOB_USD`; reduce concurrency if rate limited, correct provider failures, and stop accepting new work while investigating. Recorded spend excludes unknown usage and triage calls. |
+| Cost rises | `/metrics` exposes bulk `llm_cost_usd_total` and document `llm_triage_cost_usd_total`; query attempts and analyses below | Check retries and `MAX_COST_PER_JOB_USD`; reduce concurrency if rate limited, correct provider failures, and stop accepting new work while investigating. Recorded spend excludes unknown or uncheckpointed usage. Triage expense is shared once per document across all languages. |
 | Partial results | Job status `completed_with_errors` means missing translations rendered as source text; inspect `GET /api/jobs/{id}` errors | Resolve the reported cause; `curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8000/api/jobs/<job-id>/retry` requeues only missing work. Download again after completion. |
 | Triage remains analyzing | `GET /api/documents/{id}` and web/MCP logs; analysis tasks run in-process | After a crashed owner, `curl -fsS -X POST http://localhost:8000/api/documents/<document-id>/retry-triage`; successful analysis and analysis already used by jobs remain immutable. |
 
@@ -311,6 +311,7 @@ Read durable diagnostics without changing state:
 docker compose exec -T web sqlite3 /data/app.db "SELECT job_id,seq,status,lease_expires_at FROM chunks ORDER BY job_id,seq;"
 docker compose exec -T web sqlite3 /data/app.db "SELECT outcome,COUNT(*),SUM(cost_usd) FROM chunk_attempts GROUP BY outcome;"
 docker compose exec -T web sqlite3 /data/app.db "SELECT SUM(cost_usd),SUM(CASE WHEN attempt_no>1 THEN cost_usd ELSE 0 END) FROM chunk_attempts;"
+docker compose exec -T web sqlite3 /data/app.db "SELECT document_id,cost_usd,cost_usd_total,tokens_in_total,tokens_out_total FROM document_analyses;"
 ```
 
 `/healthz` is dependency-free web liveness. `/readyz` checks the database,
@@ -321,7 +322,12 @@ can temporarily report not ready until it recovers. Worker container health
 checks process liveness; MCP health checks its transport. Neither supplies a
 separate HTTP `/healthz` endpoint.
 
-Metrics currently expose durable job counts and known cost/error totals.
+Metrics expose durable job counts, bulk cost/error totals, and separate triage
+cost/token totals. `llm_triage_tokens_total` uses `direction="input"` and
+`direction="output"`. Current-plan analysis columns are overwritten on retry;
+`_total` columns accumulate known usage from every attempt. Scrapes and restarts
+do not recount it. Existing database rows migrate with zeros; triage spend before
+this instrumentation is permanently unrecorded.
 `cache_hits_total` is zero because hits are not persisted; latency distributions
 and retry spend are obtained from SQLite by the measurement command. Unknown
 usage from a killed or timed-out invocation cannot be reconstructed from a

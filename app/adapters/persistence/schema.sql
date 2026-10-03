@@ -34,7 +34,13 @@ CREATE TABLE IF NOT EXISTS document_analyses (
     terms TEXT NOT NULL DEFAULT '[]',
     warnings TEXT NOT NULL DEFAULT '[]',
     triage_status TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tokens_in INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    cost_usd_total REAL NOT NULL DEFAULT 0.0,
+    tokens_in_total INTEGER NOT NULL DEFAULT 0,
+    tokens_out_total INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS jobs (

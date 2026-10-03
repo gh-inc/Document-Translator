@@ -120,7 +120,14 @@ never include exception details or persisted diagnostic text.
   (503). With no inflight chunks, an absent worker cannot be detected.
   A paused/slow worker can remain not ready until lease recovery.
 - `/metrics` exports job counts per status and known provider cost/error totals
-  from durable data. Repeated scrapes do not accumulate totals again.
+  from durable data. Bulk `llm_cost_usd_total` remains job expense;
+  `llm_triage_cost_usd_total` and `llm_triage_tokens_total{direction="input|output"}`
+  report cumulative document-level triage expense, including reported retries.
+  One analysis is charged once across a multi-language batch. Repeated scrapes
+  do not accumulate totals again, and totals survive restarts. Analysis current
+  usage is overwritten on re-triage; cumulative usage survives degraded
+  delete-and-republish. Historical rows migrate with zeros; old triage expense
+  and unknown or uncheckpointed provider usage cannot be reconstructed.
   `cache_hits_total` is initialized to zero; durable cache-hit instrumentation
   is deferred because the approved schema has no cache-hit record.
 

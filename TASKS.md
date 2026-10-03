@@ -121,6 +121,34 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-76 | 11 | Restore render diagnostics behind opaque errors | done | e3ba009 |
 | DT-77 | 11 | Degrade PDF blocks with unsupported glyphs instead of failing | done | e3ba009 |
 | DT-78 | 11 | Warn about unsupported source glyphs at upload | done | e3ba009 |
+| DT-80 | 11 | Add triage usage DTO and durable analysis accounting schema | done | pending delivery hash |
+| DT-81 | 11 | Add cached-aware pricing and SDK triage usage capture | done | pending delivery hash |
+| DT-82 | 11 | Persist triage retry spend without resetting accumulated totals | done | pending delivery hash |
+| DT-83 | 11 | Export durable document-level triage cost and token metrics | done | pending delivery hash |
+| DT-84 | 11 | Document triage-inclusive accounting and measurement limits | done | pending delivery hash |
+| DT-85 | 11 | Review, verify and deliver triage cost observability | done | pending delivery hash |
+
+### Triage cost observability execution (2026-10-03)
+
+DT-80–DT-85 execute the approved
+[triage cost plan](docs/plans/2026-10-03-triage-cost-observability.md).
+DT-79 remains reserved for the user's separate DOCX table work.
+Root owns shared models/ports, documentation, review and delivery; delegated
+agents own persistence, LLM adapters/pricing, and service/metrics respectively.
+Work uses `triage-cost-observability`, based on the existing feature branch,
+with disjoint file ownership and explicit staging to preserve unrelated user
+edits. No live calls or push.
+
+Implementation and independent review are complete. Final verification:
+550 backend tests passed, 2 live tests deselected; lint clean (153 files),
+mypy clean (59 source files). A full-suite MCP deadline regression caused by
+unnecessary migration write locks was fixed and independently re-reviewed.
+Provider-reported triage usage is document-level, cached-aware, retry cumulative,
+and exported through durable scrape snapshots. Historical unrecorded usage and
+the post-commit logging crash window remain explicit. Detailed ownership,
+corrections and evidence are in the
+[execution record](docs/plans/2026-10-03-triage-cost-observability-execution.md).
+Delivery hashes are backfilled in a separate commit without history rewriting.
 
 ### PDF glyph resilience execution (2026-10-03)
 

@@ -65,8 +65,8 @@ translator workflows, or review/approval chains.
    be near $0; repeated blocks within a document also use the block cache.
    This repeat-cost outcome has not been measured in a live second-run
    comparison. Direct cache-hit instrumentation is not persisted or exported
-   today, and job cost totals cover only reported chunk usage, not triage or
-   unknown provider usage.
+   today. Job cost totals cover reported chunk usage; document-level triage
+   expense is recorded separately, while unknown provider usage remains excluded.
 3. **Multi-language:** one upload → three target languages in one action, each
    tracked, progressed, and billed independently; a failure in one does not
    affect the others.
@@ -224,8 +224,11 @@ Document IR with normalized layout semantics, and a Markdown bridge
 
 **document_analyses** — `document_id` (PK), `source_language`, `domain`,
 `register`, `terms` (JSON), `warnings` (JSON), `triage_status`
-(`ok|degraded`), `created_at` — written **once per document**, shared by all
-its jobs (§7).
+(`ok|degraded`), `created_at`, `tokens_in`, `tokens_out`, `cost_usd`,
+`cost_usd_total`, `tokens_in_total`, `tokens_out_total` — shared by all jobs
+for the document. Current-plan usage is overwritten on re-triage; running totals
+include every reported attempt, including failures and retries. Degraded
+delete-and-republish carries the totals forward in the same transaction (§7).
 
 **jobs** — `id`, `document_id`, `batch_id`, `target_language`, `status`
 (`queued → running → assembling → done | completed_with_errors | failed`),
@@ -261,10 +264,12 @@ concurrent executions of the same block cannot commit twice.
 (`ok|retryable_error|fatal_error`), `error_detail`, `created_at`.
 `job.cost_usd = SUM(chunk_attempts.cost_usd)` — the sum of application estimates
 for provider-reported usage persisted on attempt rows. It includes known usage
-from retries, but is not total provider billing: triage usage is not recorded
-in `chunk_attempts`; a transport failure can leave usage unknown; and a worker
-killed before recording an outcome may leave no attempt row. These costs are
-excluded from persisted job totals.
+from retries, but is not total provider billing: triage usage is recorded
+separately on `document_analyses`, never multiplied by the language-job count;
+a transport failure can leave usage unknown; and a worker killed before recording
+an outcome may leave no attempt row. Triage is excluded from job totals but
+included in document expense; unknown or uncheckpointed usage remains excluded
+from both.
 
 ### 5.1 Guarantees (exactly what we do and do not promise)
 
@@ -440,6 +445,8 @@ errors for future attempt accounting. Usage after an ambiguous transport failure
 is unknown. SDK automatic retries are disabled: the worker owns retries and
 records each attempt. `ModelCostCalculator` uses the Stage 2 plan's explicit
 pricing snapshot; changes to provider prices require a table update.
+`estimate_usage` prices cached input separately and validates its range, while
+`estimate` preserves the existing bulk pricing behavior.
 
 **Where the agent earns its keep — triage.** The document is unknown; someone
 must look inside it with navigation tools (`read_blocks`, `search_blocks`)
@@ -493,7 +500,12 @@ Stage 5 implements this surface through core document/job services. Stage 6 uplo
 atomically persist extracted blocks with status `analyzing`, then schedule
 triage with FastAPI BackgroundTasks and a fresh SQLite connection. The agent
 navigates bounded text snippets and returns `TriageAgentOutput` with a brief
-evidence-based explanation and TranslationPlan; only the plan is persisted.
+evidence-based explanation and TranslationPlan. The adapter returns a
+`TriageResult` with aggregate SDK input/output/cached tokens and request count.
+The service prices usage and persists current-plan and cumulative totals;
+per-attempt cost deltas are logged after commit without document text. Logs
+are best effort: a process interruption after commit can leave a durable delta
+without its corresponding log event.
 Three bounded attempts precede a heuristic degraded fallback. Analysis and the
 `extracted` transition commit together. Jobs require completed analysis and
 return `409 analysis_pending` while it is unavailable. Explicit retry recovers
@@ -630,11 +642,12 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
 
 - **Logs:** structlog JSON; `job_id`, `chunk_id`, `request_id` on every line;
   worker logs claim/heartbeat/retry/commit events.
-- **Metrics (`/metrics`):** chunk LLM latency histogram, job duration
-  histogram, `llm_errors_total{code}`, `cache_hits_total`,
-  `llm_cost_usd_total`, `llm_cost_retry_share` (known persisted attempt cost
-  after the first attempt), `jobs_by_status` gauge, worker heartbeat age. Cost
-  metrics represent provider-reported chunk usage estimates, not total billing.
+- **Metrics (`/metrics`):** `jobs_by_status`, bulk `llm_cost_usd_total`,
+  `llm_errors_total`, document `llm_triage_cost_usd_total`, and
+  `llm_triage_tokens_total{direction="input|output"}`. `cache_hits_total` is
+  present as a zero placeholder pending durable instrumentation. Cost metrics
+  represent provider-reported usage estimates, not total billing; bulk and
+  document-level triage series remain separate.
 - **Health:** `/healthz` (liveness) and `/readyz` (DB, storage,
   stale inflight leases) — not conflated.
 - **Runbook:** README section "3 a.m." — what to look at first, mapped to the
@@ -642,6 +655,10 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
 
 Stage 9 delivery exports durable job counts and known cost/error totals; these
 cost totals are estimates from provider-reported usage, not complete billing.
+`llm_cost_usd_total` remains bulk job expense; `llm_triage_cost_usd_total` and
+`llm_triage_tokens_total{direction="input|output"}` read cumulative analysis
+columns independently of jobs. A fresh registry per scrape prevents recounting,
+and durable totals survive restart.
 `cache_hits_total` remains zero without persisted hit instrumentation.
 Latency histograms, error-code labels, retry-share metrics, and direct worker
 heartbeat age are not exported; the measurement command derives available
@@ -657,8 +674,10 @@ health endpoints. Readiness cannot detect an absent idle worker.
 - Pricing table per model; the worker records each attempt outcome when it can
   persist it. `job.cost_usd` sums application estimates from provider-reported
   usage, including known usage on retries; it is not a provider invoice total.
-  Triage usage is not recorded in `chunk_attempts`; usage not returned after
-  an ambiguous failure is unknown and excluded.
+  Document expense is the sum of its jobs plus one cumulative triage total
+  from `document_analyses`; usage not returned after an ambiguous failure is
+  unknown and excluded. Historical triage before instrumentation cannot be
+  reconstructed and existing rows initialize to zero.
 - DECISIONS.md reports, on a fixed sample document, the **persisted bulk usage
   estimate per document** and what it includes (including recorded retry
   share), observed chunk/job durations, and the chrF proxy score. It reports

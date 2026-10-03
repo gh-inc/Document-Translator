@@ -9,7 +9,9 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi import FastAPI
+from structlog.testing import capture_logs
 
+from app.adapters.llm.pricing import ModelCostCalculator
 from app.adapters.llm.triage_runtime import prepare_triage
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import SqliteDocumentRepository
@@ -17,7 +19,15 @@ from app.adapters.persistence.triage import TriagePersistence
 from app.api.background import run_triage
 from app.api.main import create_app
 from app.config import Settings
-from app.core.models import DocumentIR, DocumentStatus, TranslationPlan, TriageStatus
+from app.core.errors import ErrorCode, ProviderError
+from app.core.models import (
+    Block,
+    DocumentIR,
+    DocumentStatus,
+    TranslationPlan,
+    TriageResult,
+    TriageStatus,
+)
 from app.core.services.triage_service import TriageService
 
 SAMPLE = Path(__file__).parents[2] / "samples" / "sample_en.pdf"
@@ -33,16 +43,47 @@ class ControlledAgent:
         if not blocked:
             self.release.set()
 
-    async def analyze(self, document: DocumentIR) -> TranslationPlan:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
         self.calls += 1
         self.started.set()
         await self.release.wait()
         if self.fail:
             raise RuntimeError("private provider failure")
-        return TranslationPlan(source_language="en", domain="technical", register="formal")
+        return TriageResult(
+            plan=TranslationPlan(source_language="en", domain="technical", register="formal"),
+            model="gpt-4o-mini",
+            tokens_in=10,
+            tokens_out=2,
+            cached_tokens_in=4,
+            requests=1,
+        )
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class SequencedAgent:
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = list(outcomes)
+
+    async def analyze(self, document: DocumentIR) -> TriageResult:
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class TimeoutUsageAgent:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError as error:
+            error.model = "gpt-4o-mini"
+            error.tokens_in = 7
+            error.tokens_out = 1
+            error.cached_tokens_in = 5
+            error.requests = 1
+            raise
 
 
 @pytest.fixture
@@ -166,6 +207,32 @@ async def test_response_is_sent_before_triage_and_jobs_wait_for_analysis(runtime
         await asyncio.gather(task, return_exceptions=True)
 
 
+async def test_three_language_batch_attributes_triage_cost_once(runtime) -> None:
+    app, settings, client = runtime
+    agent = ControlledAgent()
+    app.state.triage_agent_factory = lambda _settings: agent
+    document_id = (await upload(client)).json()["id"]
+    response = await client.post(
+        "/api/jobs",
+        json={
+            "document_id": document_id,
+            "target_languages": ["de", "fr", "uk"],
+            "idempotency_key": "three-language-triage-cost",
+        },
+    )
+    assert response.status_code == 200
+    assert len(response.json()["jobs"]) == 3
+    assert agent.calls == 1
+    async with repository(settings) as repo:
+        analysis = await repo.get_analysis(document_id)
+    assert analysis.cost_usd_total == pytest.approx(0.0000024)
+    metrics = (await client.get("/metrics")).text
+    triage_cost = next(
+        line for line in metrics.splitlines() if line.startswith("llm_triage_cost_usd_total ")
+    )
+    assert float(triage_cost.split()[-1]) == pytest.approx(analysis.cost_usd_total)
+
+
 async def test_three_failures_publish_degraded_plan_and_allow_jobs(runtime) -> None:
     app, settings, client = runtime
     agent = ControlledAgent(fail=True)
@@ -190,6 +257,120 @@ async def test_three_failures_publish_degraded_plan_and_allow_jobs(runtime) -> N
         },
     )
     assert response.status_code == 200
+
+
+def _usage_error(tokens_in: int, tokens_out: int, cached_tokens_in: int) -> ProviderError:
+    error = ProviderError(
+        ErrorCode.PROVIDER_TIMEOUT,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        model="gpt-4o-mini",
+        cached_tokens_in=cached_tokens_in,
+        requests=1,
+    )
+    return error
+
+
+async def test_retriage_preserves_degraded_totals_and_records_each_attempt(runtime) -> None:
+    _app, settings, _client = runtime
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repo = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repo.create_document("costed", "costed.pdf", "pdf", 1, "/unused")
+            await repo.create_blocks(
+                "costed",
+                [Block(id="costed-block", seq=0, source_text="Hello", source_hash="hash")],
+            )
+            await repo.update_document_status("costed", DocumentStatus.ANALYZING)
+
+        failed_first_run = SequencedAgent(
+            [_usage_error(10, 1, 5), _usage_error(10, 1, 5), _usage_error(10, 1, 5)]
+        )
+        service = TriageService(
+            repo,
+            failed_first_run,
+            ModelCostCalculator(),
+            lambda: transaction(connection),
+            TriagePersistence(connection).discard_degraded_analysis,
+            retry_delay_seconds=0,
+        )
+        retry_agent = SequencedAgent(
+            [
+                _usage_error(7, 2, 3),
+                TriageResult(
+                    plan=TranslationPlan(
+                        source_language="en", domain="technical", register="formal"
+                    ),
+                    model="gpt-4o-mini",
+                    tokens_in=100,
+                    tokens_out=20,
+                    cached_tokens_in=80,
+                    requests=3,
+                ),
+            ]
+        )
+        retry_service = TriageService(
+            repo,
+            retry_agent,
+            ModelCostCalculator(),
+            lambda: transaction(connection),
+            TriagePersistence(connection).discard_degraded_analysis,
+            retry_delay_seconds=0,
+        )
+        with capture_logs() as logs:
+            await service.run("costed")
+            first = await repo.get_analysis("costed")
+            assert first.triage_status is TriageStatus.DEGRADED
+            async with transaction(connection):
+                await repo.update_document_status("costed", DocumentStatus.ANALYZING)
+            await retry_service.run("costed")
+
+        analysis = await repo.get_analysis("costed")
+        assert analysis.triage_status is TriageStatus.OK
+        assert (analysis.tokens_in, analysis.tokens_out) == (100, 20)
+        assert analysis.cost_usd == pytest.approx(0.000021)
+        assert (analysis.tokens_in_total, analysis.tokens_out_total) == (137, 25)
+        assert analysis.cost_usd_total == pytest.approx(0.0000282)
+        recorded = [event for event in logs if event.get("event") == "triage_cost_recorded"]
+        assert len(recorded) == 5
+        assert all(event["document_id"] == "costed" for event in recorded)
+        assert all("source_text" not in event for event in recorded)
+        assert sum(event["tokens_in_delta"] for event in recorded) == 137
+        assert sum(event["tokens_out_delta"] for event in recorded) == 25
+        assert sum(event["cost_usd_delta"] for event in recorded) == pytest.approx(0.0000282)
+    finally:
+        await connection.close()
+
+
+async def test_outer_timeout_keeps_adapter_usage_from_cancelled_error(runtime) -> None:
+    _app, settings, _client = runtime
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repo = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repo.create_document("timeout-cost", "timeout.pdf", "pdf", 1, "/unused")
+            await repo.create_blocks(
+                "timeout-cost",
+                [Block(id="timeout-block", seq=0, source_text="Hello", source_hash="hash")],
+            )
+            await repo.update_document_status("timeout-cost", DocumentStatus.ANALYZING)
+        service = TriageService(
+            repo,
+            TimeoutUsageAgent(),
+            ModelCostCalculator(),
+            lambda: transaction(connection),
+            TriagePersistence(connection).discard_degraded_analysis,
+            attempt_timeout_seconds=0.001,
+            retry_delay_seconds=0,
+        )
+        await service.run("timeout-cost")
+        analysis = await repo.get_analysis("timeout-cost")
+        assert analysis.triage_status is TriageStatus.DEGRADED
+        assert (analysis.tokens_in_total, analysis.tokens_out_total) == (21, 3)
+        assert analysis.cost_usd_total == pytest.approx(0.000003825)
+    finally:
+        await connection.close()
 
 
 async def test_explicit_retry_recovers_stuck_record_after_restart(runtime) -> None:
@@ -304,6 +485,7 @@ async def test_timeout_falls_back_and_cancellation_remains_retryable(runtime) ->
         service = TriageService(
             SqliteDocumentRepository(connection),
             blocking,
+            ModelCostCalculator(),
             lambda: transaction(connection),
             TriagePersistence(connection).discard_degraded_analysis,
             attempt_timeout_seconds=0.01,
@@ -368,6 +550,7 @@ async def test_analysis_and_status_roll_back_if_publication_fails(
         service = TriageService(
             repo,
             ControlledAgent(),
+            ModelCostCalculator(),
             lambda: transaction(connection),
             TriagePersistence(connection).discard_degraded_analysis,
         )

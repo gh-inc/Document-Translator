@@ -87,6 +87,19 @@ class TranslationPlan(BaseModel):
     triage_status: TriageStatus = TriageStatus.OK
 
 
+class TriageResult(BaseModel):
+    """A triage plan plus the provider usage that produced it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan: TranslationPlan
+    model: str
+    tokens_in: int = Field(default=0, ge=0)
+    tokens_out: int = Field(default=0, ge=0)
+    cached_tokens_in: int = Field(default=0, ge=0)
+    requests: int = Field(default=0, ge=0)
+
+
 class TriageAgentOutput(BaseModel):
     """Structured triage result with a brief evidence-based explanation."""
 
@@ -153,6 +166,12 @@ class DocumentAnalysisRecord(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     triage_status: TriageStatus = TriageStatus.OK
     created_at: datetime
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    cost_usd_total: float = 0.0
+    tokens_in_total: int = 0
+    tokens_out_total: int = 0
 
 
 class JobRecord(BaseModel):

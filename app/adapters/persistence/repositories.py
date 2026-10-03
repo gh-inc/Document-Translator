@@ -212,13 +212,64 @@ class SqliteDocumentRepository:
         self,
         document_id: str,
         plan: TranslationPlan,
+        *,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float = 0.0,
+        cost_usd_total: float | None = None,
+        tokens_in_total: int | None = None,
+        tokens_out_total: int | None = None,
     ) -> DocumentAnalysisRecord:
         require_transaction(self._connection)
         created_at = _timestamp(datetime.now(UTC))
+        previous = await _fetch_one(
+            self._connection,
+            "SELECT * FROM document_analyses WHERE document_id = ?",
+            (document_id,),
+        )
+        previous_record = None if previous is None else _analysis(previous)
+
+        # Legacy callers may repeat a successful save without usage data. Keep
+        # that operation immutable; a real re-triage carries non-zero usage.
+        if (
+            previous_record is not None
+            and previous_record.triage_status.value == "ok"
+            and tokens_in == 0
+            and tokens_out == 0
+            and cost_usd == 0.0
+        ):
+            return previous_record
+
+        persisted_cost_total = (
+            cost_usd_total
+            if cost_usd_total is not None
+            else (previous_record.cost_usd_total if previous_record else 0.0) + cost_usd
+        )
+        persisted_tokens_in_total = (
+            tokens_in_total
+            if tokens_in_total is not None
+            else (previous_record.tokens_in_total if previous_record else 0) + tokens_in
+        )
+        persisted_tokens_out_total = (
+            tokens_out_total
+            if tokens_out_total is not None
+            else (previous_record.tokens_out_total if previous_record else 0) + tokens_out
+        )
         async with self._connection.execute(
-            "INSERT OR IGNORE INTO document_analyses "
+            "INSERT INTO document_analyses "
             "(document_id, source_language, domain, register, terms, warnings, "
-            "triage_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "triage_status, created_at, tokens_in, tokens_out, cost_usd, "
+            "cost_usd_total, tokens_in_total, tokens_out_total) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(document_id) DO UPDATE SET "
+            "source_language = excluded.source_language, domain = excluded.domain, "
+            "register = excluded.register, terms = excluded.terms, "
+            "warnings = excluded.warnings, triage_status = excluded.triage_status, "
+            "created_at = excluded.created_at, tokens_in = excluded.tokens_in, "
+            "tokens_out = excluded.tokens_out, cost_usd = excluded.cost_usd, "
+            "cost_usd_total = excluded.cost_usd_total, "
+            "tokens_in_total = excluded.tokens_in_total, "
+            "tokens_out_total = excluded.tokens_out_total",
             (
                 document_id,
                 plan.source_language,
@@ -228,6 +279,12 @@ class SqliteDocumentRepository:
                 _json(plan.warnings),
                 plan.triage_status.value,
                 created_at,
+                tokens_in,
+                tokens_out,
+                cost_usd,
+                persisted_cost_total,
+                persisted_tokens_in_total,
+                persisted_tokens_out_total,
             ),
         ):
             pass

@@ -164,12 +164,23 @@ class ApiPersistence:
         ) as cursor:
             cost_row = await cursor.fetchone()
         async with self._connection.execute(
+            "SELECT COALESCE(SUM(cost_usd_total), 0.0), "
+            "COALESCE(SUM(tokens_in_total), 0), "
+            "COALESCE(SUM(tokens_out_total), 0) FROM document_analyses"
+        ) as cursor:
+            triage_row = await cursor.fetchone()
+        async with self._connection.execute(
             "SELECT COUNT(*) FROM chunk_attempts WHERE outcome != 'ok'"
         ) as cursor:
             errors_row = await cursor.fetchone()
         return {
             "jobs_by_status": {str(row["status"]): int(row["count"]) for row in status_rows},
             "llm_cost_usd_total": 0.0 if cost_row is None else float(cost_row[0]),
+            "llm_triage_cost_usd_total": 0.0 if triage_row is None else float(triage_row[0]),
+            "llm_triage_tokens_total": {
+                "input": 0 if triage_row is None else int(triage_row[1]),
+                "output": 0 if triage_row is None else int(triage_row[2]),
+            },
             "llm_errors_total": 0 if errors_row is None else int(errors_row[0]),
             # Cache hits are intentionally not persisted by the approved schema.
             "cache_hits_total": 0,

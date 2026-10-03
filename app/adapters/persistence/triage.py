@@ -106,10 +106,26 @@ class ScopedTriageRepository:
         return await self._read(lambda repo: repo.get_analysis(document_id))
 
     async def save_analysis(
-        self, document_id: str, plan: TranslationPlan
+        self,
+        document_id: str,
+        plan: TranslationPlan,
+        *,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float = 0.0,
+        cost_usd_total: float | None = None,
+        tokens_in_total: int | None = None,
+        tokens_out_total: int | None = None,
     ) -> DocumentAnalysisRecord:
         return await SqliteDocumentRepository(self._active_connection()).save_analysis(
-            document_id, plan
+            document_id,
+            plan,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost_usd,
+            cost_usd_total=cost_usd_total,
+            tokens_in_total=tokens_in_total,
+            tokens_out_total=tokens_out_total,
         )
 
     async def update_document_status(

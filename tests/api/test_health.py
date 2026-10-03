@@ -8,8 +8,10 @@ import httpx
 import pytest
 
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
+from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.api.main import create_app
 from app.config import Settings
+from app.core.models import TranslationPlan
 
 
 @pytest.fixture
@@ -159,3 +161,62 @@ async def test_readiness_grace_scales_with_custom_chunk_lease(
         finally:
             await connection.close()
         assert (await client.get("/readyz")).status_code == 503
+
+
+async def test_metrics_read_durable_triage_totals_across_scrapes_and_reopen(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        database_path=tmp_path / "triage-metrics.db",
+        upload_storage_path=tmp_path / "uploads",
+        output_storage_path=tmp_path / "out",
+        llm_provider="fake",
+    )
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repository = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repository.create_document("metric-doc", "source.pdf", "pdf", 1, "/unused")
+            await repository.save_analysis(
+                "metric-doc",
+                TranslationPlan(source_language="en", domain="general", register="neutral"),
+                tokens_in=3,
+                tokens_out=2,
+                cost_usd=0.000001,
+                cost_usd_total=0.000015,
+                tokens_in_total=123,
+                tokens_out_total=45,
+            )
+    finally:
+        await connection.close()
+
+    async def scrape() -> str:
+        app = create_app(settings)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client,
+        ):
+            response = await client.get("/metrics")
+            assert response.status_code == 200
+            return response.text
+
+    first = await scrape()
+    second = await scrape()
+    # The second application opens the same file after the first one has closed,
+    # proving these values come from the durable analysis row.
+    reopened = await scrape()
+
+    def value(metrics: str, series: str) -> str:
+        return next(line for line in metrics.splitlines() if line.startswith(series))
+
+    expected = (
+        ("llm_triage_cost_usd_total", 0.000015),
+        ('llm_triage_tokens_total{direction="input"}', 123.0),
+        ('llm_triage_tokens_total{direction="output"}', 45.0),
+    )
+    for series, expected_value in expected:
+        assert float(value(first, series).split()[-1]) == pytest.approx(expected_value)
+        assert float(value(second, series).split()[-1]) == pytest.approx(expected_value)
+        assert float(value(reopened, series).split()[-1]) == pytest.approx(expected_value)

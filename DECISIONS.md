@@ -107,7 +107,10 @@ additional spend.
 (2 pages, 12 blocks, 1 chunk) to German at **$0.00041715** with `gpt-4o-mini`.
 The reverse quality-check job adds $0.00040785. These are known recorded bulk
 attempt costs using the adapter's pricing snapshot; triage spend and usage lost
-before checkpointing are excluded. See “Stage 9 live measurements” below.
+before checkpointing were excluded in that historical run. New analyses record
+triage separately with cached-aware pricing; document expense is bulk job costs
+plus one `document_analyses.cost_usd_total`, independent of language count.
+See “Stage 9 live measurements” below.
 
 ---
 
@@ -225,9 +228,9 @@ measurements in [Stage 9 live measurements](#stage-9-live-measurements).
 
 Several requested comparisons remain explicitly unmeasured: a population p95
 job latency, before/after chunk-parallelism latency, date/currency/placeholder
-preservation, supplied-reference chrF, and total provider billing that includes
-triage and ambiguous uncheckpointed usage. The Stage 9 table gives the reason
-for each gap. Its single forward chunk latency is one observation, not a
+preservation, supplied-reference chrF, and the historical run’s full provider
+billing, whose triage and ambiguous uncheckpointed usage cannot be reconstructed.
+The Stage 9 table gives the reason for each gap. Its single forward chunk latency is one observation, not a
 population estimate.
 
 ### Stage 3 format measurements
@@ -412,7 +415,8 @@ uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env -
 | Number/Placeholder Preservation | 100% (5/5) | Forward rendered text, strict literal multiset comparison; all five tokens are numbers |
 | Dates / currency / placeholders | not measured | The fixed sample contains none of these tokens; the command reports null for empty categories |
 | Supplied-reference chrF | not measured | No independent German reference was supplied |
-| Total provider bill per document | not measured | Triage token usage and ambiguous uncheckpointed usage have no durable billing record |
+| Triage-inclusive recorded expense per document | Sum of job costs + one document triage cumulative cost | Available for newly instrumented runs; historical Stage 9 triage was not recorded and cannot be reconstructed |
+| Exact provider invoice total | unknown | Ambiguous or uncheckpointed usage may be unavailable; application prices are estimates |
 
 Forward triage completed successfully on its third attempt; reverse triage
 exhausted three attempts and used the documented degraded fallback. The forward
@@ -422,6 +426,50 @@ is a coarse information-preservation proxy, not a translation-quality verdict.
 The output-token cost dominates only the measured bulk spend. No fake-provider
 output is used for any figure in this section. Provider prices may differ from
 the adapter's recorded pricing snapshot.
+
+### Triage cost observability (2026-10-03)
+
+`document_analyses` now stores current-plan tokens/cost and separate cumulative
+`_total` columns. Every reported attempt, including failed attempts and retries,
+adds to the cumulative figures. Current-plan values describe the successful
+plan now in force; degraded fallback has no successful provider-plan usage.
+Replacing a degraded analysis preserves cumulative expense in the same service
+transaction. Successful/frozen analyses are reused without a new provider call.
+One triage belongs to one document, even when it creates three language jobs.
+
+The Agents SDK aggregates usage on `context_wrapper.usage`, including the
+context accumulated by tool calls. The adapter retains that wrapper so reported
+partial usage can reach failure accounting. Missing usage defaults to zero;
+this means unknown, never proof of a free provider request. Cached input is
+priced at the supported models’ explicit cached rates, currently 50% of their
+input snapshot rates. No approximate cache discount is assumed. Unsupported
+configured models retain token counts, log `triage_cost_estimation_failed`, and
+record zero estimated cost until their pricing snapshot is added; this is an
+unpriced expense, not evidence of a free request.
+
+`/metrics` reads the cumulative columns in a fresh registry per scrape;
+`llm_triage_cost_usd_total` and `llm_triage_tokens_total` remain separate from
+bulk job cost. After publication commits, `triage_cost_recorded` logs attempt
+deltas with identifiers, model, token/request counts and estimated cost, never
+source text. These audit logs are best effort: a crash between commit and log
+emission can leave durable cumulative expense without its per-run log event.
+
+Offline regression fixtures (synthetic usage, not a live provider measurement):
+
+| Figure | Verified estimate | Scope |
+| --- | --- | --- |
+| Triage-inclusive document expense before bulk execution | $0.0000024 | One controlled triage: 10 input, 4 cached input, 2 output; three queued language jobs each have zero bulk spend |
+| Cumulative document triage after degraded retry | $0.0000282 | Five reported attempts, 137 input and 25 output; the current successful plan alone costs $0.000021 |
+
+These fixtures verify the accounting formula and retry behavior; they do not
+replace historical live measurements.
+
+The historical Stage 9 live figures above remain unchanged: no triage usage
+was captured then. Existing rows initialize all six accounting fields to zero.
+No retroactive reconstruction and no new live measurement were performed for
+this change. Newly recorded document expense is computable from the durable
+rows; it still excludes usage unavailable after an ambiguous failure or lost
+before publication, and is not an exact provider invoice.
 
 ---
 

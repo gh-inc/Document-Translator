@@ -10,7 +10,7 @@ from app.adapters.llm.triage_runtime import prepare_triage
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.config import Settings
-from app.core.models import Block, DocumentIR, DocumentStatus, TranslationPlan
+from app.core.models import Block, DocumentIR, DocumentStatus, TranslationPlan, TriageResult
 
 
 class ControlledAgent:
@@ -20,11 +20,18 @@ class ControlledAgent:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def analyze(self, document: DocumentIR) -> TranslationPlan:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
         self.calls += 1
         self.started.set()
         await self.release.wait()
-        return TranslationPlan(source_language="en", domain="general", register="neutral")
+        return TriageResult(
+            plan=TranslationPlan(source_language="en", domain="general", register="neutral"),
+            model="gpt-4o-mini",
+            tokens_in=10,
+            tokens_out=2,
+            cached_tokens_in=4,
+            requests=1,
+        )
 
     async def aclose(self) -> None:
         self.closed = True
@@ -118,7 +125,7 @@ import sys
 from pathlib import Path
 from app.adapters.llm.triage_runtime import prepare_triage
 from app.config import Settings
-from app.core.models import TranslationPlan
+from app.core.models import TriageResult, TranslationPlan
 
 class Agent:
     async def analyze(self, document):
@@ -129,7 +136,10 @@ class Agent:
         print('provider', flush=True)
         while not await asyncio.to_thread(Path(sys.argv[3]).exists):
             await asyncio.sleep(0.01)
-        return TranslationPlan(source_language='en', domain='general', register='neutral')
+        return TriageResult(
+            plan=TranslationPlan(source_language='en', domain='general', register='neutral'),
+            model='gpt-4o-mini', tokens_in=10, tokens_out=2, cached_tokens_in=4, requests=1,
+        )
 
 async def main():
     settings = Settings(database_path=Path(sys.argv[1]), llm_provider='fake')

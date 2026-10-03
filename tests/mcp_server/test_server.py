@@ -120,7 +120,7 @@ async def test_mcp_connections_close_before_poll_sleeps_and_provider_calls(
     runtime: McpRuntime, input_pdf: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.adapters.persistence.database import SqliteConnectionFactory
-    from app.core.models import DocumentIR, TranslationPlan
+    from app.core.models import DocumentIR, TriageResult
     from app.mcp_server.server import McpTools
 
     active_runtime_connections: set[Connection] = set()
@@ -151,7 +151,7 @@ async def test_mcp_connections_close_before_poll_sleeps_and_provider_calls(
         return await original_sleep(delay, result)
 
     class ObservedAgent(FakeTriageAgent):
-        async def analyze(self, document: DocumentIR) -> TranslationPlan:
+        async def analyze(self, document: DocumentIR) -> TriageResult:
             # Independent status polls may run at the same time. The triage
             # repository's own scopes must close before invoking the provider.
             assert active_connections.issubset(active_runtime_connections)

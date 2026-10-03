@@ -20,6 +20,7 @@ from app.core.models import (
     JobStatus,
     RenderResult,
     TranslationPlan,
+    TriageResult,
 )
 
 
@@ -42,7 +43,7 @@ class DocumentRenderer(Protocol):
 
 
 class TriageAgent(Protocol):
-    async def analyze(self, document: DocumentIR) -> TranslationPlan: ...
+    async def analyze(self, document: DocumentIR) -> TriageResult: ...
 
 
 class DocumentRepository(Protocol):
@@ -73,6 +74,13 @@ class DocumentRepository(Protocol):
         self,
         document_id: str,
         plan: TranslationPlan,
+        *,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float = 0.0,
+        cost_usd_total: float | None = None,
+        tokens_in_total: int | None = None,
+        tokens_out_total: int | None = None,
     ) -> DocumentAnalysisRecord: ...
 
     async def get_analysis(self, document_id: str) -> DocumentAnalysisRecord | None: ...
@@ -187,6 +195,10 @@ class FileStorage(Protocol):
 
 class CostCalculator(Protocol):
     def estimate(self, model: str, tokens_in: int, tokens_out: int) -> float: ...
+
+    def estimate_usage(
+        self, model: str, tokens_in: int, tokens_out: int, cached_tokens_in: int = 0
+    ) -> float: ...
 
 
 class FormatRegistry(Protocol):

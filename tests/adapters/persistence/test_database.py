@@ -59,6 +59,83 @@ async def test_factory_initializes_pragmas_and_schema_on_file_connection(
 
 
 @pytest.mark.asyncio
+async def test_factory_migrates_legacy_analysis_rows_and_serializes_startup(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as legacy:
+        legacy.executescript(
+            """
+            CREATE TABLE documents (
+                id TEXT PRIMARY KEY, filename TEXT NOT NULL, format TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL, page_count INTEGER, storage_path TEXT NOT NULL,
+                status TEXT NOT NULL, error_code TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE document_analyses (
+                document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+                source_language TEXT NOT NULL, domain TEXT NOT NULL, register TEXT NOT NULL,
+                terms TEXT NOT NULL DEFAULT '[]', warnings TEXT NOT NULL DEFAULT '[]',
+                triage_status TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO documents (id, filename, format, size_bytes, storage_path, status)
+            VALUES ('doc-legacy', 'old.pdf', 'pdf', 12, '/uploads/old.pdf', 'extracted');
+            INSERT INTO document_analyses (
+                document_id, source_language, domain, register, triage_status
+            ) VALUES ('doc-legacy', 'en', 'general', 'neutral', 'ok');
+            """
+        )
+
+    connections = await asyncio.gather(
+        SqliteConnectionFactory(db_path).create(),
+        SqliteConnectionFactory(db_path).create(),
+    )
+    try:
+        expected = {
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": 0.0,
+            "cost_usd_total": 0.0,
+            "tokens_in_total": 0,
+            "tokens_out_total": 0,
+        }
+        for connection in connections:
+            async with connection.execute(
+                "SELECT tokens_in, tokens_out, cost_usd, cost_usd_total, "
+                "tokens_in_total, tokens_out_total FROM document_analyses "
+                "WHERE document_id = 'doc-legacy'"
+            ) as cursor:
+                row = await cursor.fetchone()
+            assert row is not None
+            assert dict(row) == expected
+            async with connection.execute("PRAGMA table_info(document_analyses)") as cursor:
+                names = {str(info[1]) for info in await cursor.fetchall()}
+            assert names >= expected.keys()
+    finally:
+        await asyncio.gather(*(connection.close() for connection in connections))
+
+
+@pytest.mark.asyncio
+async def test_migrated_factory_open_does_not_wait_for_unrelated_writer(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "already-migrated.db"
+    initial = await SqliteConnectionFactory(db_path).create()
+    await initial.close()
+
+    writer = await SqliteConnectionFactory(db_path, init_schema=False).create()
+    try:
+        async with writer.execute("BEGIN IMMEDIATE"):
+            pass
+        reopened = await asyncio.wait_for(SqliteConnectionFactory(db_path).create(), 1.0)
+        await reopened.close()
+    finally:
+        await writer.rollback()
+        await writer.close()
+
+
+@pytest.mark.asyncio
 async def test_factory_supports_memory_mode_and_optional_schema() -> None:
     connection = await SqliteConnectionFactory(Path(":memory:"), init_schema=False).create()
     try:

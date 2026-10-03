@@ -14,6 +14,8 @@ import pytest
 from agents import FunctionTool
 from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from agents.tool_context import ToolContext
+from agents.usage import Usage
+from openai.types.responses.response_usage import InputTokensDetails
 from pydantic import SecretStr, ValidationError
 
 from app.adapters.llm import triage_agent
@@ -32,7 +34,14 @@ from app.adapters.llm.triage_agent import (
 )
 from app.config import Settings
 from app.core.errors import ErrorCode, ProviderError
-from app.core.models import Block, DocumentIR, TranslationPlan, TriageAgentOutput, TriageStatus
+from app.core.models import (
+    Block,
+    DocumentIR,
+    TranslationPlan,
+    TriageAgentOutput,
+    TriageResult,
+    TriageStatus,
+)
 
 
 def _document(texts: list[str] | None = None, *, start_seq: int = 0) -> DocumentIR:
@@ -147,22 +156,31 @@ async def test_per_run_navigation_budget_bounds_parallel_or_repeated_calls() -> 
 async def test_fake_plan_is_repeatable_and_uses_ordered_unique_capitalized_terms() -> None:
     document = _document(["Beta Alpha Beta", "Gamma delta"])
     document.blocks.reverse()
-    fake = FakeTriageAgent(fail_rate=0.0, latency_ms=0)
+    fake = FakeTriageAgent(
+        settings=Settings(openai_model="configured-model"), fail_rate=0.0, latency_ms=0
+    )
 
     first = await fake.analyze(document)
     second = await fake.analyze(document)
 
     assert first == second
-    assert isinstance(first, TranslationPlan)
-    assert first.source_language == "en"
-    assert first.domain == "general"
-    assert first.register == "neutral"
-    assert first.terms == ["Beta", "Alpha", "Gamma"]
-    assert first.warnings == []
-    assert first.triage_status == TriageStatus.OK
+    assert isinstance(first, TriageResult)
+    assert first.model == "configured-model"
+    assert (first.tokens_in, first.tokens_out, first.cached_tokens_in, first.requests) == (
+        173,
+        29,
+        61,
+        3,
+    )
+    assert first.plan.source_language == "en"
+    assert first.plan.domain == "general"
+    assert first.plan.register == "neutral"
+    assert first.plan.terms == ["Beta", "Alpha", "Gamma"]
+    assert first.plan.warnings == []
+    assert first.plan.triage_status == TriageStatus.OK
     words = [f"Term{chr(97 + index // 26)}{chr(97 + index % 26)}" for index in range(100)]
     many = await fake.analyze(_document([" ".join(words)]))
-    assert many.terms == words[:MAX_TERMS]
+    assert many.plan.terms == words[:MAX_TERMS]
 
 
 @pytest.mark.parametrize(
@@ -171,7 +189,7 @@ async def test_fake_plan_is_repeatable_and_uses_ordered_unique_capitalized_terms
 )
 async def test_fake_limited_language_detection(text: str, language: str) -> None:
     result = await FakeTriageAgent(fail_rate=0.0).analyze(_document([text]))
-    assert result.source_language == language
+    assert result.plan.source_language == language
 
 
 @pytest.mark.parametrize(
@@ -193,7 +211,7 @@ async def test_fake_explicit_zero_overrides_fault_and_latency_settings() -> None
     fake = FakeTriageAgent(
         settings=Settings(fake_fail_rate=1.0, fake_latency_ms=500), fail_rate=0.0, latency_ms=0
     )
-    assert (await fake.analyze(_document())).triage_status == TriageStatus.OK
+    assert (await fake.analyze(_document())).plan.triage_status == TriageStatus.OK
     assert fake.config.latency_ms == 0
 
 
@@ -210,7 +228,7 @@ async def test_fake_seeded_failure_can_succeed_on_later_attempt() -> None:
     fake = FakeTriageAgent(fail_rate=0.5, rng=random.Random(1))
     with pytest.raises(ProviderError):
         await fake.analyze(_document())
-    assert (await fake.analyze(_document())).triage_status == TriageStatus.OK
+    assert (await fake.analyze(_document())).plan.triage_status == TriageStatus.OK
 
 
 @pytest.mark.parametrize(
@@ -230,8 +248,8 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
     async def run(agent: Any, **kwargs: Any) -> object:
         captured.update(kwargs)
         captured["agent"] = agent
-        await _invoke(agent.tools[0], kwargs["context"], start_seq=10, count=1)
-        return SimpleNamespace(final_output=_output())
+        await _invoke(agent.tools[0], kwargs["context"].context, start_seq=10, count=1)
+        return SimpleNamespace(final_output=_output(), context_wrapper=SimpleNamespace())
 
     monkeypatch.setattr(triage_agent.Runner, "run", run)
     document = _document(start_seq=10)
@@ -239,8 +257,15 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
 
     result = await adapter.analyze(document)
 
-    assert result == _output().plan
-    assert captured["context"] is document
+    assert result.plan == _output().plan
+    assert result.model == "configured-model"
+    assert (result.tokens_in, result.tokens_out, result.cached_tokens_in, result.requests) == (
+        0,
+        0,
+        0,
+        0,
+    )
+    assert captured["context"].context is document
     assert captured["max_turns"] == DEFAULT_MAX_TURNS
     assert captured["run_config"].tracing_disabled is True
     assert captured["run_config"].trace_include_sensitive_data is False
@@ -284,6 +309,75 @@ async def test_openai_rejects_degraded_provider_plan(monkeypatch: pytest.MonkeyP
     with pytest.raises(ProviderError) as raised:
         await OpenAITriageAgent(client=object()).analyze(_document())
     assert raised.value.error_code == ErrorCode.PROVIDER_INVALID_RESPONSE
+
+
+def _aggregated_usage() -> Usage:
+    usage = Usage()
+    usage.add(
+        Usage(
+            requests=1,
+            input_tokens=100,
+            input_tokens_details=InputTokensDetails(cached_tokens=20, cache_write_tokens=0),
+            output_tokens=11,
+            total_tokens=111,
+        )
+    )
+    usage.add(
+        Usage(
+            requests=1,
+            input_tokens=150,
+            input_tokens_details=InputTokensDetails(cached_tokens=30, cache_write_tokens=0),
+            output_tokens=17,
+            total_tokens=167,
+        )
+    )
+    return usage
+
+
+async def test_openai_returns_aggregated_usage_across_multiple_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregate = _aggregated_usage()
+
+    async def run(*args: Any, **kwargs: Any) -> object:
+        await _invoke(args[0].tools[0], kwargs["context"].context, start_seq=0, count=1)
+        return SimpleNamespace(
+            final_output=_output(), context_wrapper=SimpleNamespace(usage=aggregate)
+        )
+
+    monkeypatch.setattr(triage_agent.Runner, "run", run)
+    result = await OpenAITriageAgent(
+        settings=Settings(openai_model="configured-model"), client=object()
+    ).analyze(_document())
+
+    assert (result.tokens_in, result.tokens_out, result.cached_tokens_in, result.requests) == (
+        250,
+        28,
+        50,
+        2,
+    )
+
+
+async def test_openai_retains_usage_when_runner_fails_after_a_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregate = _aggregated_usage()
+
+    async def run(*args: Any, **kwargs: Any) -> object:
+        kwargs["context"].usage.add(aggregate)
+        raise RuntimeError("sensitive provider details")
+
+    monkeypatch.setattr(triage_agent.Runner, "run", run)
+    with pytest.raises(ProviderError) as raised:
+        await OpenAITriageAgent(
+            settings=Settings(openai_model="configured-model"), client=object()
+        ).analyze(_document())
+
+    assert raised.value.error_code == ErrorCode.PROVIDER_INVALID_RESPONSE
+    assert raised.value.model == "configured-model"
+    assert (raised.value.tokens_in, raised.value.tokens_out) == (250, 28)
+    assert raised.value.cached_tokens_in == 50
+    assert raised.value.requests == 2
 
 
 @pytest.mark.parametrize(
@@ -354,6 +448,7 @@ async def test_openai_timeout_cancels_runner_and_external_cancellation_propagate
     cancelled: list[bool] = []
 
     async def run(*args: Any, **kwargs: Any) -> object:
+        kwargs["context"].usage.add(_aggregated_usage())
         try:
             await asyncio.sleep(10)
         finally:
@@ -363,6 +458,9 @@ async def test_openai_timeout_cancels_runner_and_external_cancellation_propagate
     with pytest.raises(ProviderError) as raised:
         await OpenAITriageAgent(client=object(), timeout_seconds=0.01).analyze(_document())
     assert raised.value.error_code == ErrorCode.PROVIDER_TIMEOUT
+    assert (raised.value.tokens_in, raised.value.tokens_out) == (250, 28)
+    assert raised.value.cached_tokens_in == 50
+    assert raised.value.requests == 2
     assert cancelled == [True]
 
     task = asyncio.create_task(OpenAITriageAgent(client=object()).analyze(_document()))
@@ -438,6 +536,6 @@ async def test_live_triage_produces_plan_after_sdk_navigation() -> None:
         )
     finally:
         await adapter.aclose()
-    assert isinstance(plan, TranslationPlan)
-    assert plan.source_language.lower() in {"en", "eng", "english"}
-    assert plan.triage_status == TriageStatus.OK
+    assert isinstance(plan, TriageResult)
+    assert plan.plan.source_language.lower() in {"en", "eng", "english"}
+    assert plan.plan.triage_status == TriageStatus.OK

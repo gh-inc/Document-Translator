@@ -103,10 +103,14 @@ class ProviderError(Exception):
         tokens_in: int = 0,
         tokens_out: int = 0,
         model: str | None = None,
+        cached_tokens_in: int = 0,
+        requests: int = 0,
     ) -> None:
         self.error_code = error_code
         self.message, self.retryable = _CATALOG[error_code]
         self.tokens_in = tokens_in
         self.tokens_out = tokens_out
         self.model = model
+        self.cached_tokens_in = cached_tokens_in
+        self.requests = requests
         super().__init__(self.message)

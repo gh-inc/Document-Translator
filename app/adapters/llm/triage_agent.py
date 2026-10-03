@@ -6,7 +6,7 @@ import asyncio
 import json
 import math
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import openai
 from agents import (
@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.core.errors import ErrorCode, ProviderError
-from app.core.models import DocumentIR, TranslationPlan, TriageAgentOutput, TriageStatus
+from app.core.models import DocumentIR, TriageAgentOutput, TriageResult, TriageStatus
 
 MAX_READ_BLOCKS = 8
 MAX_SEARCH_RESULTS = 8
@@ -59,6 +59,45 @@ class _NavigationBudget:
         if self.calls >= MAX_TOOL_CALLS:
             raise ProviderError(ErrorCode.PROVIDER_INVALID_RESPONSE)
         self.calls += 1
+
+
+def _usage_values(usage: Any | None) -> dict[str, int]:
+    """Read aggregated SDK usage without depending on every response having it."""
+    if usage is None:
+        return {"tokens_in": 0, "tokens_out": 0, "cached_tokens_in": 0, "requests": 0}
+
+    input_details = getattr(usage, "input_tokens_details", None)
+    return {
+        "tokens_in": getattr(usage, "input_tokens", 0) or 0,
+        "tokens_out": getattr(usage, "output_tokens", 0) or 0,
+        "cached_tokens_in": getattr(input_details, "cached_tokens", 0) or 0,
+        "requests": getattr(usage, "requests", 0) or 0,
+    }
+
+
+def _provider_error(error_code: ErrorCode, model: str, usage: Any | None) -> ProviderError:
+    values = _usage_values(usage)
+    error = ProviderError(
+        error_code,
+        tokens_in=values["tokens_in"],
+        tokens_out=values["tokens_out"],
+        model=model,
+        cached_tokens_in=values["cached_tokens_in"],
+        requests=values["requests"],
+    )
+    return error
+
+
+def _retain_usage(error: ProviderError, model: str, usage: Any | None) -> None:
+    values = _usage_values(usage)
+    error.model = error.model or model
+    # The run wrapper is authoritative when it has aggregate usage. Preserve
+    # ProviderError-provided values only when the SDK accumulated no usage.
+    if values["requests"] or values["tokens_in"] or values["tokens_out"]:
+        error.tokens_in = values["tokens_in"]
+        error.tokens_out = values["tokens_out"]
+        error.cached_tokens_in = values["cached_tokens_in"]
+        error.requests = values["requests"]
 
 
 def _bounded_json(items: list[dict[str, object]]) -> str:
@@ -169,7 +208,7 @@ class OpenAITriageAgent:
             await self._client.close()
             self._client = None
 
-    async def analyze(self, document: DocumentIR) -> TranslationPlan:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
         model = self._settings.openai_model.strip() or "gpt-4o-mini"
         budget = _NavigationBudget()
         navigation = _navigation_tools(budget)
@@ -186,6 +225,9 @@ class OpenAITriageAgent:
             },
             separators=(",", ":"),
         )
+        # Passing an explicit wrapper keeps accumulated usage available when
+        # Runner.run raises before it can return its result object.
+        context_wrapper = RunContextWrapper(context=document)
         try:
             agent = Agent[DocumentIR](
                 name="DocumentTriageAgent",
@@ -207,24 +249,43 @@ class OpenAITriageAgent:
                 result = await Runner.run(
                     agent,
                     input=prompt,
-                    context=document,
+                    # Runner.run's public annotation accepts only TContext, but
+                    # its installed normalize helper explicitly passes wrappers through.
+                    context=cast(DocumentIR, context_wrapper),
                     max_turns=self._max_turns,
                     run_config=RunConfig(tracing_disabled=True, trace_include_sensitive_data=False),
                 )
             output = TriageAgentOutput.model_validate(result.final_output)
             if not budget.successful_reads or output.plan.triage_status != TriageStatus.OK:
-                raise ProviderError(ErrorCode.PROVIDER_INVALID_RESPONSE, model=model)
-            return output.plan
-        except ProviderError:
+                raise _provider_error(
+                    ErrorCode.PROVIDER_INVALID_RESPONSE, model, context_wrapper.usage
+                )
+            result_context = getattr(result, "context_wrapper", None)
+            usage = (
+                getattr(result_context, "usage", None)
+                if result_context is not None
+                else context_wrapper.usage
+            )
+            return TriageResult(plan=output.plan, model=model, **_usage_values(usage))
+        except ProviderError as error:
+            _retain_usage(error, model, context_wrapper.usage)
             raise
         except (TimeoutError, openai.APITimeoutError):
-            raise ProviderError(ErrorCode.PROVIDER_TIMEOUT, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_TIMEOUT, model, context_wrapper.usage
+            ) from None
         except openai.APIConnectionError:
-            raise ProviderError(ErrorCode.PROVIDER_CONNECTION, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_CONNECTION, model, context_wrapper.usage
+            ) from None
         except openai.RateLimitError:
-            raise ProviderError(ErrorCode.PROVIDER_RATE_LIMIT, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_RATE_LIMIT, model, context_wrapper.usage
+            ) from None
         except openai.AuthenticationError:
-            raise ProviderError(ErrorCode.PROVIDER_AUTH_ERROR, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_AUTH_ERROR, model, context_wrapper.usage
+            ) from None
         except openai.APIStatusError as exc:
             if exc.status_code == 408:
                 code = ErrorCode.PROVIDER_TIMEOUT
@@ -234,13 +295,19 @@ class OpenAITriageAgent:
                 code = ErrorCode.PROVIDER_AUTH_ERROR
             else:
                 code = ErrorCode.PROVIDER_BAD_REQUEST
-            raise ProviderError(code, model=model) from None
+            raise _provider_error(code, model, context_wrapper.usage) from None
         except openai.ContentFilterFinishReasonError:
-            raise ProviderError(ErrorCode.PROVIDER_REFUSAL, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_REFUSAL, model, context_wrapper.usage
+            ) from None
         except (openai.OpenAIError, AgentsException, ValidationError, ValueError, TypeError):
-            raise ProviderError(ErrorCode.PROVIDER_INVALID_RESPONSE, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_INVALID_RESPONSE, model, context_wrapper.usage
+            ) from None
         except Exception:
-            raise ProviderError(ErrorCode.PROVIDER_INVALID_RESPONSE, model=model) from None
+            raise _provider_error(
+                ErrorCode.PROVIDER_INVALID_RESPONSE, model, context_wrapper.usage
+            ) from None
 
     def _get_client(self, model: str) -> Any:
         if self._client is None:

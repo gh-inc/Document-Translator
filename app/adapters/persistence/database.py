@@ -60,6 +60,47 @@ async def _read_schema(path: Path) -> str:
     return await asyncio.to_thread(path.read_text, encoding="utf-8")
 
 
+async def _migrate_document_analysis_usage(connection: Connection) -> None:
+    """Add durable triage usage columns to databases created by older versions.
+
+    Processes inspect the schema without a write lock and acquire BEGIN
+    IMMEDIATE only when columns are missing. They recheck after acquiring the
+    lock, so a concurrent initializer observes another process's completed
+    migration and safely skips the columns it added.
+    """
+    columns = (
+        ("tokens_in", "INTEGER NOT NULL DEFAULT 0"),
+        ("tokens_out", "INTEGER NOT NULL DEFAULT 0"),
+        ("cost_usd", "REAL NOT NULL DEFAULT 0.0"),
+        ("cost_usd_total", "REAL NOT NULL DEFAULT 0.0"),
+        ("tokens_in_total", "INTEGER NOT NULL DEFAULT 0"),
+        ("tokens_out_total", "INTEGER NOT NULL DEFAULT 0"),
+    )
+
+    async def existing_columns() -> set[str]:
+        async with connection.execute("PRAGMA table_info(document_analyses)") as cursor:
+            return {str(row[1]) for row in await cursor.fetchall()}
+
+    existing = await existing_columns()
+    required = {name for name, _ in columns}
+    if not existing or required <= existing:
+        return
+
+    # The read-only fast path above avoids contending with ordinary writers on
+    # every connection open. Recheck after acquiring the lock because another
+    # process may have completed the migration since our initial inspection.
+    async with transaction(connection):
+        existing = await existing_columns()
+        if not existing:
+            return
+        for name, definition in columns:
+            if name not in existing:
+                async with connection.execute(
+                    f"ALTER TABLE document_analyses ADD COLUMN {name} {definition}"
+                ):
+                    pass
+
+
 async def _finish_cleanup(awaitable: Awaitable[object]) -> None:
     """Finish connection cleanup even if the caller is being cancelled."""
     task = asyncio.ensure_future(awaitable)
@@ -142,6 +183,7 @@ class SqliteConnectionFactory:
                 schema = await _read_schema(SCHEMA_PATH)
                 async with connection.executescript(schema):
                     pass
+                await _migrate_document_analysis_usage(connection)
             return connection
         except BaseException:
             with suppress(BaseException):

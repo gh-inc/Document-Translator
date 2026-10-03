@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings
 from app.core.errors import ErrorCode, ProviderError
-from app.core.models import DocumentIR, TranslationPlan
+from app.core.models import DocumentIR, TranslationPlan, TriageResult
 
 _FAILURE_CODES = {
     "429": ErrorCode.PROVIDER_RATE_LIMIT,
@@ -20,6 +20,7 @@ _FAILURE_CODES = {
 }
 MAX_TERMS = 20
 MAX_SAMPLE_CHARS = 20_000
+_FAKE_USAGE = {"tokens_in": 173, "tokens_out": 29, "cached_tokens_in": 61, "requests": 3}
 
 
 class _FakeTriageConfig(BaseModel):
@@ -76,14 +77,15 @@ class FakeTriageAgent:
             }
         )
         self._rng = rng or random.Random()
-        self._model = configured.openai_model
+        self._model = configured.openai_model.strip() or "gpt-4o-mini"
 
-    async def analyze(self, document: DocumentIR) -> TranslationPlan:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
         if self.config.latency_ms:
             await asyncio.sleep(self.config.latency_ms / 1000)
         if self._rng.random() < self.config.fail_rate:
             raise ProviderError(_FAILURE_CODES[self.config.fail_mode], model=self._model)
-        return await asyncio.to_thread(heuristic_plan, document)
+        plan = await asyncio.to_thread(heuristic_plan, document)
+        return TriageResult(plan=plan, model=self._model, **_FAKE_USAGE)
 
     async def aclose(self) -> None:
         """No resources are held by the fake adapter."""

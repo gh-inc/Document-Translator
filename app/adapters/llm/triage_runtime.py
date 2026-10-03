@@ -6,12 +6,13 @@ from contextlib import suppress
 import structlog
 
 from app.adapters.llm.fake_triage_agent import FakeTriageAgent
+from app.adapters.llm.pricing import ModelCostCalculator
 from app.adapters.llm.triage_agent import OpenAITriageAgent
 from app.adapters.persistence.database import _finish_cleanup
 from app.adapters.persistence.triage import ScopedTriageRepository
 from app.adapters.storage.document_locks import release_document_lock, try_document_lock
 from app.config import Settings
-from app.core.models import DocumentIR, TranslationPlan
+from app.core.models import DocumentIR, TriageResult
 from app.core.ports import TriageAgent
 from app.core.services.triage_service import TriageService
 
@@ -31,7 +32,7 @@ class _LazyAgent:
         self._factory = factory
         self._agent: TriageAgent | None = None
 
-    async def analyze(self, document: DocumentIR) -> TranslationPlan:
+    async def analyze(self, document: DocumentIR) -> TriageResult:
         if self._agent is None:
             self._agent = self._factory(self._settings)
         return await self._agent.analyze(document)
@@ -95,6 +96,7 @@ async def prepare_triage(
     service = TriageService(
         repository,
         agent,
+        ModelCostCalculator(),
         repository.transaction,
         repository.discard_degraded_analysis,
         claim_analysis=repository.claim_analysis,
