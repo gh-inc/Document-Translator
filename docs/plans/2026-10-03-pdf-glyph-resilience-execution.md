@@ -64,3 +64,6 @@ This favors source retention; overlapping supported translation can still leave
 crowded layout, and PyMuPDF may shift retained source spans slightly when
 applying neighboring redactions. All original glyphs survive; pixel-identical
 layout is outside the documented PDF fidelity limits.
+
+  Token usage:         124K total  (109K input + 14.6K output)
+  Context window:      61% left (109K used / 258K)

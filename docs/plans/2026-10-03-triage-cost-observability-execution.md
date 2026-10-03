@@ -109,3 +109,6 @@ Token usage snapshot UTC: 2026-10-03T13:28:06.495671+00:00.
 Root plus 4 delegated-agent sessions: 33,563,082 total tokens, including 32,892,660 cached input tokens; 113,773 output tokens. Counts include repeated context reads. This
 snapshot precedes the hash-backfill commit and final response; final response
 reports the later closing snapshot.
+
+  Token usage:         210K total  (181K input + 28.5K output)
+  Context window:      38% left (165K used / 258K)
