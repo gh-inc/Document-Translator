@@ -26,6 +26,7 @@ class ErrorCode(StrEnum):
     PROVIDER_AUTH_ERROR = "provider_auth_error"
     PROVIDER_INVALID_RESPONSE = "provider_invalid_response"
     PROVIDER_REFUSAL = "provider_refusal"
+    SHARED_DIR_UNAVAILABLE = "shared_dir_unavailable"
 
 
 _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
@@ -54,6 +55,12 @@ _CATALOG: dict[ErrorCode, tuple[str, bool]] = {
         True,
     ),
     ErrorCode.PROVIDER_REFUSAL: ("Translation provider refused the request", False),
+    # Terminal on purpose: no client action resolves host directory ownership,
+    # so an MCP client must stop rather than retry a permanent fault.
+    ErrorCode.SHARED_DIR_UNAVAILABLE: (
+        "Shared translation directory is not writable by the service",
+        False,
+    ),
 }
 
 

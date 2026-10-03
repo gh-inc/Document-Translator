@@ -155,6 +155,10 @@ class McpTools:
             return safe_error(error.error_code)
         except ValueError:
             return safe_error(ErrorCode.INVALID_REQUEST)
+        except PermissionError:
+            # Terminal, unlike the general OSError clause below: a host-side
+            # ownership fault is not something the client can retry away.
+            return safe_error(ErrorCode.SHARED_DIR_UNAVAILABLE)
         except OSError:
             return safe_error(ErrorCode.INTERNAL_ERROR)
         except Exception:
