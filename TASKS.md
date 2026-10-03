@@ -136,7 +136,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-91 | 11 | Content-address translation cache, plan isolation, durable counters and UI | done | 3f9fff4 |
 
-| DT-92 | 11 | Extract quality metrics, source licensed corpus and measure two-model benchmark | done | pending delivery hash |
+| DT-92 | 11 | Extract quality metrics, source licensed corpus and measure two-model benchmark | done | db4fc44 |
 
 ### MCP download error mapping execution (2026-10-03)
 

@@ -62,6 +62,33 @@ the staged delivery snapshot was verified in /tmp without including or editing i
 OVERVIEW remains untouched because this matrix is documented in DECISIONS,
 README and the execution record, with build/service accounting kept separate.
 
+## Delivery
+
+Implementation commit: `db4fc44` — `DT-92: feat(benchmark): measure licensed reference quality across models`.
+Branch: `benchmark-matrix`. Verification/token accounting and TASKS hash backfill
+are committed separately without history rewriting. Pre-existing and newly
+appeared unrelated user edits remain unstaged.
+
 ## Token accounting
 
-Record task-specific root usage delta and all DT-92 delegated sessions at delivery.
+Codex session token_count telemetry at 2026-10-03T19:16:02.591578+00:00,
+after implementation commit and before this accounting commit. Root usage
+subtracts the pre-DT-92 baseline (10,040,505 input,
+16,313 output); only this task's four bm_ agent
+sessions are included, including resumed review turns. DT-91 usage is excluded.
+
+| Agent | Input | Cached input (included) | Output |
+|---|---:|---:|---:|
+| `/root/bm_review` | 2,567,043 | 2,479,086 | 5,637 |
+| `/root/bm_metrics` | 482,191 | 432,638 | 4,647 |
+| `/root/bm_matrix` | 3,022,728 | 2,976,741 | 12,880 |
+| `/root/bm_corpus` | 1,554,878 | 1,499,974 | 7,100 |
+| `/root` | 8,600,047 | 8,516,735 | 18,350 |
+| **Total** | **16,226,887** | **15,905,174** | **48,614** |
+
+Uncached input: 321,713. Output includes
+12,874 reasoning tokens; they are not added twice. Input
+accumulates context over model requests, including repeated cached prefixes;
+it is not unique text or an invoice estimate. The accounting commit and final
+response occur after the checkpoint and are excluded. Agent build usage is
+separate from the $0.05823335 known translation-service usage estimate.
