@@ -807,6 +807,62 @@ No public contracts changed. Existing user-written Stage 10 rulings are
 preserved as a separate uncommitted change; this execution entry is the only
 new PROMPTS content included in the delivery commit.
 
+### 2026-10-03 — Defects found in operation: PDF glyphs and DOCX tables
+
+**Origin.** Not a planned stage. Two defects surfaced while operating the
+system and were diagnosed against user-supplied fixtures in `samples/`.
+
+**Defect 1 — PDF render failure with no diagnosable cause.** A 60-page
+landscape PDF generated from Markdown failed with `render_failed`. The rendered
+error carried no cause because three catch-alls discard the real exception:
+the format adapter, `Assembly.render`, and `ClaimLoop`. The only surviving log
+line was `worker_render_failed` with `job_id` alone.
+
+**How the cause was found.** Comparing `samples/platon-complex.md` against
+`samples/platon-gliph.md` showed a single-character difference: an emoji
+`🏛️` in a heading. Verifying the PDF against PyMuPDF's bundled `cjk` font
+confirmed four unsupported characters in one block out of seventy: `U+1F3DB`,
+`U+FE0F`, and `U+0001` / `U+0002`. The last two are not in the source Markdown
+at all — the PDF generator placed the emoji in a font subset and PyMuPDF
+emitted raw control codes for glyphs it could not map. `platon-complex.pdf` has
+zero unsupported characters, which is why it rendered.
+
+**Rejected analysis.** An initial hypothesis blamed Cyrillic or an unsupported
+target language. Testing showed Latin, Cyrillic, Greek and CJK are all covered;
+Vietnamese, Arabic, Hebrew, Thai, Devanagari and emoji are not. English, the
+actual target, was fully covered — so the language hypothesis was discarded in
+favour of the document-complexity evidence.
+
+**Rejected design — strict rejection at upload.** Refused: one checklist icon
+must not discard a 60-page document. The cost in lost conversion outweighs
+predictable failure.
+
+**Rejected design — glyph mapping tables.** Refused by the user as
+unmaintainable: `✔→✓`, `₽→RUB` and an open-ended tail cannot be enumerated.
+The approved approach filters by Unicode category instead — dropping `Cc`/`Cf`
+non-printing characters, then degrading any block that still has visible
+unsupported characters.
+
+**Approved — hybrid A + C.** Warn at extraction, degrade at render. A block
+whose translation cannot be drawn is skipped before the redaction pass, so the
+original text stays on the canvas, and the job ends as
+`completed_with_errors`. A key implementation detail: because the renderer
+builds `render_items` *before* redacting, skipping a block excludes it from
+redaction automatically — reordering those steps would erase text without
+replacing it.
+
+**Defect 2 — DOCX tables untranslated.** Measured: 16 body paragraphs extracted,
+28 paragraphs inside table cells ignored, so 64% of the document was never
+translated. Cause: the extractor iterates `document.paragraphs`, which yields
+only top-level paragraphs. This is a recorded Stage 3 scope cut rather than a
+regression, but it is a significant product gap.
+
+**Outcome.** Two plans recorded, kept separate so one does not destabilise the
+other: `docs/plans/2026-10-03-pdf-glyph-resilience.md` (DT-76…DT-78, ready for
+implementation) and `docs/plans/2026-10-03-docx-tables-design.md` (DT-79, design
+only — no code written). `samples/platon-*.{md,pdf,docx}` become permanent
+regression fixtures.
+
 
 ## DT-93 — triage efficiency and analysis cost (2026-10-03)
 
