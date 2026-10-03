@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import structlog
 
@@ -35,8 +37,37 @@ from app.core.errors import ErrorCode, ServiceError
 from app.core.models import Block, DocumentRecord, DocumentStatus
 from app.core.services.document_service import DocumentService
 from app.core.services.job_service import JobService
+from app.mcp_server.paths import resolve_shared_path
 
 logger = structlog.get_logger(__name__)
+
+
+def _shared_output_is_usable(root: Path) -> bool:
+    """Check the default MCP destination without creating or changing paths."""
+    # Reuse the same containment resolution as downloads. In particular, a
+    # writable symlink outside the mount is unusable even though os.access() on
+    # the link target would succeed.
+    resolved_root = root.resolve(strict=True)
+    resolved_probe = resolve_shared_path(root, "output", must_exist=False)
+    existing_directories = [resolved_root]
+    for component in resolved_probe.relative_to(resolved_root).parts:
+        candidate = existing_directories[-1] / component
+        try:
+            metadata = candidate.stat()
+        except FileNotFoundError:
+            break
+        if not stat.S_ISDIR(metadata.st_mode):
+            return False
+        existing_directories.append(candidate)
+
+    # open_shared_directory opens the root and every existing child read-only,
+    # so all existing components need read/search access. The nearest existing
+    # directory also needs write access: it is either output itself or the
+    # parent where missing components are created.
+    for directory in existing_directories[:-1]:
+        if not os.access(directory, os.R_OK | os.X_OK):
+            return False
+    return os.access(existing_directories[-1], os.R_OK | os.W_OK | os.X_OK)
 
 
 @dataclass
@@ -96,32 +127,25 @@ class McpRuntime:
         """
         root = self.settings.mcp_shared_dir
         probe = root / "output"
-        root_writable = await asyncio.to_thread(os.access, root, os.W_OK)
-        # A missing output directory is the healthy case: the download path
-        # creates it under the service uid. Only an existing directory that the
-        # service cannot write is a fault.
-        output_exists = await asyncio.to_thread(probe.exists)
-        if not output_exists:
-            if not root_writable:
-                logger.error(
-                    "mcp_shared_dir_not_writable",
-                    uid=os.getuid(),
-                    directory_name=probe.name,
-                    remedy=(
-                        "grant the service uid write access to the host shared "
-                        "directory; downloads cannot create their output directory"
-                    ),
-                )
-            return
-        if await asyncio.to_thread(os.access, probe, os.W_OK):
-            return
+        try:
+            usable = await asyncio.to_thread(_shared_output_is_usable, root)
+        except (OSError, RuntimeError, ValueError):
+            # Inaccessible paths, symlink loops, and containment failures all
+            # make the configured default download directory unusable. Keep
+            # startup available and report only a generic operator hint.
+            usable = False
+        if not usable:
+            self._log_shared_directory_unavailable(probe.name)
+
+    @staticmethod
+    def _log_shared_directory_unavailable(directory_name: str) -> None:
         logger.error(
             "mcp_shared_dir_not_writable",
             uid=os.getuid(),
-            directory_name=probe.name,
+            directory_name=directory_name,
             remedy=(
-                "grant the service uid write access to the host shared directory, "
-                "or remove the output directory so the service creates it itself"
+                "grant the service uid read, write, and search access to output "
+                "(or its parent when output is missing); preserve existing artifacts"
             ),
         )
 

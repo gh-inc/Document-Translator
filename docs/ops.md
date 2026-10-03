@@ -28,11 +28,15 @@ MCP reads and writes files only under `MCP_HOST_SHARED_DIR` on the host, mounted
 as `/mcp-files` in the container. The container runs as UID 10001; give that
 dedicated host directory write permission for UID 10001 (or an ACL) if MCP
 needs to save downloads there. Prefer ownership (`sudo chown -R 10001:10001
-mcp-files`) over `chmod 0777`: artifacts publish at mode 0644, so the host needs
+mcp-files`): artifacts publish at mode 0644, so the host needs
 read access only. A missing `output/` directory is healthy — the service creates
 it under its own UID on first use — so a wrongly-owned one is best removed with
 `sudo rm -rf mcp-files/output`. Run `make mcp-share-check` for a read-only report
 of ownership per directory plus the exact remedy; it never modifies anything.
+It estimates numeric UID/GID mode permissions, excluding ACLs, supplementary
+groups and ancestors above the share. It also conservatively rejects symlink
+directories, including contained symlinks accepted by the MCP service. Removing `output/` deletes existing
+downloads; preserve needed files first and ensure its parent permits recreation.
 
 Only `download_result` is affected by an unwritable share, because
 `translate_file` and `check_status` read rather than write. The MCP server logs

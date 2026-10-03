@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # Report whether the MCP shared directory is usable by the container.
 #
-# Read-only by contract: it never elevates privilege, never creates, removes or
-# chmods anything, and never runs chown. It reports state and prints the remedy
-# so the privilege decision stays with the operator.
-#
-# The container runs as a non-root uid (10001 in the shipped image). A host
-# directory owned by another uid and mode 0755 is readable but not writable, and
-# the only affected tool is download_result.
+# Read-only by contract: it never elevates privilege, creates, removes, or
+# changes permissions. Access is estimated from numeric UID/GID and POSIX mode
+# bits. ACL entries and supplementary groups are not evaluated.
 
 set -Eeuo pipefail
 
@@ -15,20 +11,28 @@ usage() {
     cat <<'USAGE'
 Usage: prepare-mcp-share.sh [shared-directory]
 
-Reports ownership and access for the MCP shared directory as the service uid and
-prints the remedy when a directory is unusable.
-This script never modifies anything and never elevates privilege.
+Reports access to the MCP shared directory using SERVICE_UID/SERVICE_GID and
+the directory's POSIX mode bits. The shared root and input need read/search;
+output needs read/write/search. A missing output directory is usable only
+when its parent has read/write/search access to create it. This checker never
+modifies anything or elevates privilege.
+
+This numeric UID/GID check does not evaluate POSIX ACLs or supplementary groups,
+so it can conservatively report inaccessible a directory the service can access
+through either of those mechanisms. It checks the configured root and its input
+and output children, not ancestors above the configured root.
 
 Arguments:
   shared-directory   Host bind source for /mcp-files. Default: ./mcp-files
 
 Environment:
   SERVICE_UID        uid the container runs as. Default: 10001
-  SERVICE_GID        gid the container runs as. Default: same as SERVICE_UID
+  SERVICE_GID        primary gid the container runs as. Default: same as UID
 
 Exit status:
-  0  every probed directory satisfies what the service needs
-  1  at least one directory is unusable, or the check could not run
+  0  every required directory operation appears usable
+  1  a required operation is unusable or could not be inspected
+  2  usage or UID/GID configuration is invalid
 USAGE
 }
 
@@ -49,89 +53,170 @@ fi
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 shared_dir="${1:-$repo_dir/mcp-files}"
 service_uid="${SERVICE_UID:-10001}"
-# The shipped image creates uid and gid 10001 together; override SERVICE_GID when
-# they differ on your host.
 service_gid="${SERVICE_GID:-$service_uid}"
 
-if [ ! -d "$shared_dir" ]; then
-    printf 'shared directory %s does not exist\n' "$(basename -- "$shared_dir")" >&2
-    printf 'the service creates it on startup; create it on the host first:\n' >&2
-    printf '  sudo mkdir -p %s/input %s/output\n' "$shared_dir" "$shared_dir" >&2
-    exit 1
+normalize_id() {
+    local value=$1
+    while [[ ${#value} -gt 1 && $value == 0* ]]; do
+        value=${value#0}
+    done
+    printf '%s' "$value"
+}
+
+if [[ ! $service_uid =~ ^[0-9]+$ || ! $service_gid =~ ^[0-9]+$ ]]; then
+    printf 'SERVICE_UID and SERVICE_GID must be non-negative decimal integers\n' >&2
+    exit 2
 fi
+service_uid=$(normalize_id "$service_uid")
+service_gid=$(normalize_id "$service_gid")
 
-failures=0
+shell_quote() {
+    local escaped=${1//\'/\'\\\'\'}
+    printf "'%s'" "$escaped"
+}
 
-report() {
-    local directory=$1
-    local need_write=$2
-    local name
-    name=$(basename -- "$directory")
+metadata() {
+    # GNU stat reports the link itself by default. Callers reject symlinks
+    # before reaching this function.
+    stat -c '%u:%g:%a' -- "$1" 2>/dev/null
+}
 
-    if [ ! -e "$directory" ]; then
-        printf '%s: missing; the service creates it on startup\n' "$name"
-        return 0
+access_satisfies() {
+    local owner=$1 group=$2 mode=$3 required=$4
+    local digits=${mode: -3} selected
+    owner=$(normalize_id "$owner")
+    group=$(normalize_id "$group")
+
+    if [[ $service_uid == "$owner" ]]; then
+        selected=${digits:0:1}
+    elif [[ $service_gid == "$group" ]]; then
+        selected=${digits:1:1}
+    else
+        selected=${digits:2:1}
     fi
 
-    local owner group mode group_bit other_bit
-    owner=$(stat -c '%u' "$directory")
-    group=$(stat -c '%g' "$directory")
-    mode=$(stat -c '%a' "$directory")
+    # The selected octal digit contains rwx as bits 4, 2, and 1.
+    (( (selected & required) == required ))
+}
 
-    # Decide from the mode bits against the *service* uid. `[ -w ]` would only
-    # report whether the invoking user may write, which is not the question: the
-    # container runs as service_uid regardless of who runs this script.
-    # Judge the permission bit, not "digit >= 2": read-only digits 4 and 5 also
-    # compare >= 2. The low two bits of an rwx digit carry w, so a digit modulo
-    # 4 of 2 or 3 means the permission is present.
-    group_bit=$(( ${mode: -2:1} % 4 >= 2 ? 1 : 0 ))
-    other_bit=$(( ${mode: -1:1} % 4 >= 2 ? 1 : 0 ))
+describe_access() {
+    local path=$1 label=$2 operation=$3 required=$4 repair_path=$5 recursive=$6
+    local values owner group mode quoted_path quoted_ids chown_option
+    local access_words
 
-    if [ "$owner" = "$service_uid" ] || { [ "$group" = "$service_gid" ] && [ "$group_bit" = 1 ]; } || [ "$other_bit" = 1 ]; then
-        printf '%s: uid %s, mode %s, writable\n' "$name" "$owner" "$mode"
-        return 0
+    if [[ -L $path ]]; then
+        failures=$((failures + 1))
+        printf '%s: symlink; refusing to follow it\n' "$label"
+        return 1
+    fi
+    if [[ ! -e $path ]]; then
+        failures=$((failures + 1))
+        printf '%s: missing; this directory must exist for %s\n' "$label" "$operation"
+        printf '  create it with: sudo mkdir -p %s\n' "$(shell_quote "$path")"
+        return 1
+    fi
+    if [[ ! -d $path ]]; then
+        failures=$((failures + 1))
+        printf '%s: non-directory; refusing to use it for %s\n' "$label" "$operation"
+        return 1
     fi
 
-    if [ "$need_write" = no ]; then
-        # Reads are sufficient for input/: translate_file and check_status never
-        # write into the share.
-        printf '%s: uid %s, mode %s, readable only (sufficient: writes not needed here)\n' \
-            "$name" "$owner" "$mode"
+    if ! values=$(metadata "$path"); then
+        failures=$((failures + 1))
+        printf '%s: could not inspect ownership and mode; assuming unusable\n' "$label"
+        return 1
+    fi
+    IFS=: read -r owner group mode <<<"$values"
+    if [[ ! $mode =~ ^[0-7]{1,4}$ ]]; then
+        failures=$((failures + 1))
+        printf '%s: unrecognized POSIX mode; assuming unusable\n' "$label"
+        return 1
+    fi
+    mode=$(printf '%03o' "$((8#$mode))")
+
+    if access_satisfies "$owner" "$group" "$mode" "$required"; then
+        printf '%s: uid %s, gid %s, mode %s; %s access available\n' \
+            "$label" "$owner" "$group" "$mode" "$operation"
         return 0
     fi
 
     failures=$((failures + 1))
-    printf '%s: uid %s, mode %s; the service runs as uid %s and cannot write here\n' \
-        "$name" "$owner" "$mode" "$service_uid"
-    if [ "$name" = output ]; then
-        cat <<'REMEDY'
-  The service creates this directory itself when it is missing, so the simplest
-  fix is to let it:
-    sudo rm -rf mcp-files/output
-  Alternatively, grant the service uid access to the whole share:
-    sudo chown -R 10001:10001 mcp-files
-  Read-only tools (translate_file, check_status) keep working meanwhile.
-REMEDY
+    case "$operation" in
+        'read and search') access_words='read and search' ;;
+        'read, write, and search') access_words='read, write, and search' ;;
+        'read, write, and search (to create output)') access_words='read, write, and search' ;;
+        *) access_words=$operation ;;
+    esac
+    printf '%s: uid %s, gid %s, mode %s; service uid %s gid %s does not meet required %s permissions\n' \
+        "$label" "$owner" "$group" "$mode" "$service_uid" "$service_gid" "$access_words"
+
+    quoted_path=$(shell_quote "$repair_path")
+    printf '  suggested ownership remedy (not run):\n'
+    quoted_ids=$(shell_quote "$service_uid:$service_gid")
+    if [[ $recursive == yes ]]; then
+        chown_option='-R '
     else
-        cat <<'REMEDY'
-    sudo chown -R 10001:10001 mcp-files
-REMEDY
+        chown_option=''
     fi
+    printf '    sudo chown %s%s %s\n' "$chown_option" "$quoted_ids" "$quoted_path"
+    case "$operation" in
+        'read and search')
+            printf '    sudo chmod u+rx %s\n' "$quoted_path"
+            ;;
+        'read, write, and search'|'read, write, and search (to create output)')
+            printf '    sudo chmod u+rwx %s\n' "$quoted_path"
+            ;;
+    esac
+    if [[ $label == output ]]; then
+        printf '  destructive alternative, only if the parent lets the service recreate output:\n'
+        printf '    sudo rm -rf -- %s\n' "$quoted_path"
+        printf '  warning: this permanently deletes existing output artifacts.\n'
+    fi
+    return 1
 }
 
-printf 'checking %s for service uid %s (gid %s)\n' "$shared_dir" "$service_uid" "$service_gid"
-# input/ is only ever read, so read-only access there is not a fault. output/ and
-# the share root must accept a download.
-report "$shared_dir/input" no
-# A missing output directory is healthy: the download path creates it under the
-# service uid on first use. Only an existing, unwritable one is a fault.
-report "$shared_dir/output" yes
-report "$shared_dir" yes
+failures=0
+printf 'checking %s for service uid %s (gid %s)\n' \
+    "$(shell_quote "$shared_dir")" "$service_uid" "$service_gid"
 
-if [ "$failures" -gt 0 ]; then
-    printf '\n%d directory/directories unusable; downloads will fail with shared_dir_unavailable\n' \
-        "$failures"
+if [[ -L $shared_dir ]]; then
+    printf 'shared directory: symlink; refusing to follow it\n'
+    exit 1
+fi
+if [[ ! -e $shared_dir ]]; then
+    printf 'shared directory %s does not exist\n' "$(shell_quote "$shared_dir")"
+    printf '  create it with: sudo mkdir -p %s/input %s/output\n' \
+        "$(shell_quote "$shared_dir")" "$(shell_quote "$shared_dir")"
+    exit 1
+fi
+if [[ ! -d $shared_dir ]]; then
+    printf 'shared directory: non-directory; refusing to use it\n'
     exit 1
 fi
 
-printf '\nall probed directories satisfy what the service needs\n'
+output_path="$shared_dir/output"
+# open_shared_directory opens the root and child directories with O_RDONLY |
+# O_DIRECTORY. Therefore existing directories require read+search, and output
+# creation also needs write on the shared root.
+if [[ ! -e $output_path && ! -L $output_path ]]; then
+    # open_shared_directory(create=True) creates output under the share root.
+    describe_access "$shared_dir" 'shared directory (output parent)' \
+        'read, write, and search (to create output)' 7 "$shared_dir" no || :
+else
+    describe_access "$shared_dir" 'shared directory' 'read and search' 5 \
+        "$shared_dir" no || :
+fi
+
+describe_access "$shared_dir/input" input 'read and search' 5 "$shared_dir/input" yes || :
+if [[ ! -e $output_path && ! -L $output_path ]]; then
+    printf 'output: missing; service can create it under the checked parent\n'
+else
+    describe_access "$output_path" output 'read, write, and search' 7 "$output_path" no || :
+fi
+
+if [ "$failures" -gt 0 ]; then
+    printf '\n%d directory operation(s) unusable; downloads or input reads may fail\n' "$failures"
+    exit 1
+fi
+
+printf '\nall probed directory operations satisfy what the service needs\n'

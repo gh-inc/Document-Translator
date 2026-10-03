@@ -230,8 +230,8 @@ mkdir -p mcp-files/input
 sudo chown -R 10001:10001 mcp-files
 ```
 
-`chmod 0777 mcp-files/output` also works, but world-writable is broader than
-needed: artifacts publish at mode 0644, so the host only needs read access. If a
+This replaces the earlier world-writable permission advice: artifacts publish
+at mode 0644, so the host only needs read access. If a
 wrongly-owned `output/` directory is already in the way, the service provisions
 that directory itself on first use, so the simplest repair is:
 
@@ -239,9 +239,14 @@ that directory itself on first use, so the simplest repair is:
 sudo rm -rf mcp-files/output
 ```
 
+Removal deletes existing downloads; preserve any needed files first. The shared
+parent must allow UID 10001 to recreate `output/`.
+
 Check the current state at any time with the read-only `make mcp-share-check`,
 which reports ownership per directory and prints the remedy without changing
-anything. A wrong-owned `output/` affects `download_result` only:
+anything. The checker estimates numeric UID/GID mode permissions; ACLs,
+supplementary groups and ancestors above the share are outside its checks.
+A wrong-owned `output/` affects `download_result` only:
 `translate_file` and `check_status` keep working because they read. The server
 also logs one `mcp_shared_dir_not_writable` line at startup when the share is
 unusable, and `download_result` then answers `shared_dir_unavailable` with

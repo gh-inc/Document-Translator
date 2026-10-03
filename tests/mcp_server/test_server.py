@@ -107,10 +107,24 @@ async def test_startup_reports_an_unusable_shared_output_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime = McpRuntime(mcp_settings)
+    mcp_settings.mcp_shared_dir.mkdir(parents=True)
+    output = mcp_settings.mcp_shared_dir / "output"
+    output.mkdir()
     # Probe by intercepting the access check rather than chmod-ing a fixture: a
     # permission test based on file modes passes silently when the suite runs as
     # root, which is exactly where this defect would stay invisible.
-    monkeypatch.setattr(os, "access", lambda *_args, **_kwargs: False)
+    access_checks: list[tuple[Path, int]] = []
+
+    def access(path: str | os.PathLike[str], mode: int) -> bool:
+        checked_path = Path(path)
+        access_checks.append((checked_path, mode))
+        return checked_path != output
+
+    monkeypatch.setattr(
+        os,
+        "access",
+        access,
+    )
     try:
         with capture_logs() as logs:
             await runtime.startup()
@@ -118,22 +132,81 @@ async def test_startup_reports_an_unusable_shared_output_directory(
         await runtime.aclose()
 
     reports = [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
-    assert reports, "startup did not report an unusable shared output directory"
+    assert len(reports) == 1, "startup should report the unusable directory once"
     report = reports[0]
     assert report["log_level"] == "error"
     assert report["uid"] == os.getuid()
     assert report["directory_name"] == "output"
     assert report["remedy"]
+    assert "preserve existing artifacts" in report["remedy"]
+    assert "rm -rf" not in report["remedy"]
+    assert access_checks == [
+        (mcp_settings.mcp_shared_dir, os.R_OK | os.X_OK),
+        (output, os.R_OK | os.W_OK | os.X_OK),
+    ]
     # No resolved host path may reach the log.
     assert str(mcp_settings.mcp_shared_dir) not in str(logs)
 
 
-async def test_startup_stays_silent_when_the_shared_output_is_usable(
-    runtime: McpRuntime,
+async def test_startup_reports_a_non_directory_output_path(
+    mcp_settings: Settings,
 ) -> None:
+    runtime = McpRuntime(mcp_settings)
+    mcp_settings.mcp_shared_dir.mkdir(parents=True)
+    (mcp_settings.mcp_shared_dir / "output").write_text("occupied", encoding="utf-8")
+    try:
+        with capture_logs() as logs:
+            await runtime.startup()
+    finally:
+        await runtime.aclose()
+
+    reports = [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
+    assert len(reports) == 1
+    assert reports[0]["directory_name"] == "output"
+    assert str(mcp_settings.mcp_shared_dir) not in str(logs)
+
+
+async def test_startup_reports_an_output_symlink_outside_the_shared_root(
+    mcp_settings: Settings,
+) -> None:
+    runtime = McpRuntime(mcp_settings)
+    mcp_settings.mcp_shared_dir.mkdir(parents=True)
+    outside = mcp_settings.mcp_shared_dir.parent / "outside"
+    outside.mkdir()
+    (mcp_settings.mcp_shared_dir / "output").symlink_to(outside, target_is_directory=True)
+    try:
+        with capture_logs() as logs:
+            await runtime.startup()
+    finally:
+        await runtime.aclose()
+
+    reports = [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
+    assert len(reports) == 1
+    assert reports[0]["directory_name"] == "output"
+    assert str(mcp_settings.mcp_shared_dir) not in str(logs)
+    assert str(outside) not in str(logs)
+
+
+async def test_startup_stays_silent_when_the_shared_output_is_missing(
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = McpRuntime(mcp_settings)
+    access_checks: list[tuple[Path, int]] = []
+
+    def access(path: str | os.PathLike[str], mode: int) -> bool:
+        access_checks.append((Path(path), mode))
+        return True
+
+    monkeypatch.setattr(os, "access", access)
     with capture_logs() as logs:
-        await runtime.startup()
+        try:
+            await runtime.startup()
+        finally:
+            await runtime.aclose()
     assert not [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
+    assert not (mcp_settings.mcp_shared_dir / "output").exists()
+    assert access_checks == [(mcp_settings.mcp_shared_dir, os.R_OK | os.W_OK | os.X_OK)]
 
 
 async def test_shutdown_releases_claim_cancelled_before_run_starts(

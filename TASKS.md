@@ -40,6 +40,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
+| DT-101 | 11 | MCP shared-directory permissions: preflight, terminal errors, read-only doctor and acceptance | done | 3aefe66, 04d96ac, f379293, dd3bc2c, 41a68fe; acceptance delivery below |
 | DT-1 | 0 | Establish git conventions and task backlog | done | 8590e81, this fix |
 | DT-2 | 0 | Record AI provider and cost strategy; correct decision references | done | 095b67b, 8094265 |
 | DT-3 | 0 | Add REST schemas and adapter skeletons | done | 8669e64 |
@@ -562,3 +563,18 @@ Task-only verification: 685 tests passed, 2 live tests deselected; lint clean
 Follow-up agent usage checkpoint: input 1,321,533, output 3,876;
 root-only delta since the owner request, including cached input, excluding later
 verification/commit/report turns. Source: local token_count records.
+
+### DT-101 shared-directory permissions acceptance
+
+Existing implementation was audited, then delegated owners corrected startup
+preflight and the read-only host doctor, with independent cross-review. The
+startup probe handles missing output, invalid paths and directory access off
+the event loop. The doctor checks numeric mode permissions and quotes remedies;
+its ACL/group/symlink limits are explicit. Earlier chmod 0777 advice was replaced.
+
+Acceptance: 706 tests passed, 2 live tests deselected; lint clean (181 files),
+typecheck clean (61 source files). Isolated real MCP HTTP transport with
+FakeProvider verified terminal permission error, operator fixture repair and
+0644 readable publication. Existing live host output still needs an operator
+ownership fix; no existing artifacts were removed. Details and token checkpoint:
+[execution record](docs/plans/2026-10-03-mcp-shared-dir-permissions-execution.md).
