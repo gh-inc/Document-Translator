@@ -222,11 +222,32 @@ These configurations follow the official
 
 ## Three-step MCP verification
 
-Before the container verification, create the dedicated directories and grant
-UID 10001 write access to `output/` (or use a local ACL). For example,
-`mkdir -p mcp-files/input mcp-files/output` and `chmod 0777 mcp-files/output`
-permit downloads in that dedicated output directory. Copy the sample into
-`mcp-files/input/`; host input files must be readable by the container.
+Before the container verification, grant the container's UID 10001 write access
+to the shared directory. Ownership is the recommended route:
+
+```bash
+mkdir -p mcp-files/input
+sudo chown -R 10001:10001 mcp-files
+```
+
+`chmod 0777 mcp-files/output` also works, but world-writable is broader than
+needed: artifacts publish at mode 0644, so the host only needs read access. If a
+wrongly-owned `output/` directory is already in the way, the service provisions
+that directory itself on first use, so the simplest repair is:
+
+```bash
+sudo rm -rf mcp-files/output
+```
+
+Check the current state at any time with the read-only `make mcp-share-check`,
+which reports ownership per directory and prints the remedy without changing
+anything. A wrong-owned `output/` affects `download_result` only:
+`translate_file` and `check_status` keep working because they read. The server
+also logs one `mcp_shared_dir_not_writable` line at startup when the share is
+unusable, and `download_result` then answers `shared_dir_unavailable` with
+`retryable=false` so an MCP client stops instead of retrying — the fix is
+host-side. Copy the sample into `mcp-files/input/`; host input files must be
+readable by the container.
 
 1. Place `sample_en.pdf` in the shared `input/` directory. Ask the editor to call
    `translate_file` with `path="input/sample_en.pdf"` and

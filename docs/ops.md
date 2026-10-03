@@ -27,9 +27,21 @@ without calling an external provider or supplying an API key. Set
 MCP reads and writes files only under `MCP_HOST_SHARED_DIR` on the host, mounted
 as `/mcp-files` in the container. The container runs as UID 10001; give that
 dedicated host directory write permission for UID 10001 (or an ACL) if MCP
-needs to save downloads there. Completed downloads publish with mode 0644 so
-the host user can open files created by container UID 10001; temporary copies
-remain private until publication. The rest of the host filesystem is not mounted.
+needs to save downloads there. Prefer ownership (`sudo chown -R 10001:10001
+mcp-files`) over `chmod 0777`: artifacts publish at mode 0644, so the host needs
+read access only. A missing `output/` directory is healthy — the service creates
+it under its own UID on first use — so a wrongly-owned one is best removed with
+`sudo rm -rf mcp-files/output`. Run `make mcp-share-check` for a read-only report
+of ownership per directory plus the exact remedy; it never modifies anything.
+
+Only `download_result` is affected by an unwritable share, because
+`translate_file` and `check_status` read rather than write. The MCP server logs
+`mcp_shared_dir_not_writable` once at startup, and `download_result` answers
+`shared_dir_unavailable` with `retryable=false`, so a client stops rather than
+looping on a fault that no client action can resolve. Completed downloads publish
+with mode 0644 so the host user can open files created by container UID 10001;
+temporary copies remain private until publication. The rest of the host
+filesystem is not mounted.
 
 ## Restart-under-chaos verification
 

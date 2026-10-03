@@ -1,4 +1,4 @@
-.PHONY: setup dev frontend-dev test test-live lint format typecheck up down build logs
+.PHONY: setup dev frontend-dev test test-live lint format typecheck up down build logs mcp-share-check
 
 setup:
 	uv sync
@@ -38,3 +38,7 @@ build:
 
 logs:
 	docker compose logs -f
+
+# Read-only host permission check for the MCP shared directory.
+mcp-share-check:
+	./scripts/prepare-mcp-share.sh
