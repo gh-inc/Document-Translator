@@ -202,22 +202,26 @@ requested Luna candidates explicitly selectable after successful live checks.
 All authorized implementation and verification are complete; scoped commits
 include task-hash backfill. No merge, push, deployment or production-DB change.
 
-## Agent token accounting — delivery checkpoint
+## Agent token accounting — final delivery snapshot
+
+Implementation commit: `3a919c0`. A separate documentation commit backfills the
+implementation hash and this final accounting snapshot. No amend, rebase or push.
 
 This snapshot sums the root's task session and six fresh task-scoped child
 sessions (one reviewer was reused). Input includes cached input across requests;
 reasoning output is already included in output. It covers both task turns,
-implementation, delegation, reviews and measurements orchestration, excluding
-subsequent commit/report turns. Live translator/provider tokens are separate.
+implementation, delegation, reviews, measurements orchestration and implementation
+commit. It excludes subsequent documentation-commit/final-response tokens that
+cannot be recorded inside their own result. Live provider tokens are separate.
 Raw local token_count events are the source; counts are not estimated.
 
 | Agent | Input tokens | Output tokens |
 |---|---:|---:|
-| /root | 14,812,327 | 33,666 |
+| /root | 16,060,462 | 35,665 |
 | /root/review_telemetry | 274,241 | 1,841 |
 | /root/review_final | 3,348,437 | 10,842 |
 | /root/telemetry | 1,615,292 | 5,398 |
 | /root/luna_compat | 1,828,245 | 6,292 |
 | /root/outline | 1,301,013 | 5,859 |
 | /root/split_models | 908,603 | 5,311 |
-| **Delivery checkpoint total** | **24,088,158** | **69,209** |
+| **Final delivery snapshot total** | **25,336,293** | **71,208** |

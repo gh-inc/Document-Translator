@@ -146,7 +146,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-97 | docs | Add review overview and total cost accounting | done | be51d3c |
 | DT-98 | docs | Record PDF glyph and DOCX table defect investigation | done | 9b4aa5b |
 | DT-99 | docs | Backfill agent token usage in execution records | done | f8e32cd |
-| DT-100 | triage | Diagnose, measure and improve bounded triage convergence | done | delivery hash recorded below |
+| DT-100 | triage | Diagnose, measure and improve bounded triage convergence | done | 3a919c0 |
 
 ### MCP download error mapping execution (2026-10-03)
 
@@ -542,6 +542,7 @@ accepted 5/5. Cache-write-adjusted Luna6/Luna5.6 estimates averaged $0.000998178
 and $0.002089002; production estimates exclude that premium. Terminal exhaustion
 remains fail-fast. All measured claims retain the small-corpus limitation.
 Final task-only acceptance: 685 tests passed, 2 live tests deselected; lint clean
-(177 files), typecheck clean (61 source files). Delivery hashes follow after commit.
+(177 files), typecheck clean (61 source files). Implementation delivery:
+`3a919c0`; documentation/hash backfill follows.
 Concurrent MCP work is excluded. See
 [execution evidence](docs/plans/2026-10-03-triage-convergence-execution.md).
