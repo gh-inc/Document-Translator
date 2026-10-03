@@ -57,6 +57,29 @@ stalled and was interrupted; verification runs outside the sandbox.
 
 ## Delivery and token accounting
 
-Implementation delivery hash and measured agent token checkpoint will be
-backfilled in a separate documentation commit, without rewriting history.
+Implementation commit: `3d0dd66` (`DT-94: fix(docx): translate top-level table
+paragraphs in reading order`). Task hash backfill and token accounting are
+delivered in a separate documentation commit, without rewriting history.
 Unrelated pre-existing edits are excluded; no push is requested.
+
+
+Token accounting measured from Codex session
+`token_count.info.total_token_usage`, summing root and all three delegated
+sessions, including resumed turns. Root session baseline before this task is
+zero. This checkpoint follows the implementation commit and precedes the
+accounting commit/final response; those later requests are excluded.
+
+| Agent | Input | Cached input (included) | Output | Last usage checkpoint (UTC) |
+|---|---:|---:|---:|---|
+| `/root` | 4,319,559 | 4,226,229 | 11,094 | 2026-10-03T19:38:58.862Z |
+| `/root/adapter` | 628,856 | 573,710 | 4,581 | 2026-10-03T19:34:57.809Z |
+| `/root/review` | 2,136,903 | 2,058,372 | 4,094 | 2026-10-03T19:37:39.189Z |
+| `/root/tests` | 1,796,989 | 1,750,953 | 11,520 | 2026-10-03T19:37:32.663Z |
+| **Total** | **8,882,307** | **8,609,264** | **31,289** | — |
+
+Uncached input: 273,043. Output includes
+2,507 reasoning tokens; they are not counted twice.
+Input accumulates contexts across requests and includes cache hits; it is not
+a count of unique text or a billing estimate. No live translation calls were
+made for this task. Exact final-response totals cannot be recorded before the
+final response exists.

@@ -140,9 +140,9 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-93 | 11 | Fail fast on terminal triage failures, configure agent limits, surface analysis cost | done | 3c50295 |
 
-| DT-94 | 11 | Translate DOCX body and table paragraphs with compatible locators | done | pending delivery hash |
-| DT-95 | 11 | Verify DOCX table edge cases and sample round trips | done | pending delivery hash |
-| DT-96 | 11 | Review, document and deliver DOCX table translation | done | pending delivery hash |
+| DT-94 | 11 | Translate DOCX body and table paragraphs with compatible locators | done | 3d0dd66 |
+| DT-95 | 11 | Verify DOCX table edge cases and sample round trips | done | 3d0dd66 |
+| DT-96 | 11 | Review, document and deliver DOCX table translation | done | 3d0dd66 |
 
 ### MCP download error mapping execution (2026-10-03)
 
