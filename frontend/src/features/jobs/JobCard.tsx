@@ -14,9 +14,13 @@ export interface JobCardProps {
   live?: boolean;
   showDetailsLink?: boolean;
   onJobUpdate?: (job: JobSummaryResponse) => void;
+  /** Document analysis cost, rendered only on the first card of its document. */
+  analysisCostUsd?: number | null;
+  /** How many translations share that document's analysis. */
+  analysisSharedBy?: number;
 }
 
-export default function JobCard({ jobId, initialJob, live = true, showDetailsLink = false, onJobUpdate }: JobCardProps) {
+export default function JobCard({ jobId, initialJob, live = true, showDetailsLink = false, onJobUpdate, analysisCostUsd = null, analysisSharedBy = 1 }: JobCardProps) {
   const { job, loading, error, reconnecting, reload } = useJobEvents(jobId, initialJob, live);
   const [action, setAction] = useState<'retry' | 'download' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -84,6 +88,12 @@ export default function JobCard({ jobId, initialJob, live = true, showDetailsLin
         {cachedPercent !== null && <p className="mt-2" aria-label={`${job.cache_hit_blocks} of ${cachedTotal} blocks served from the translation cache`}>{cachedPercent}% cached</p>}
         <progress className="mt-2 w-full accent-stark-red" aria-label={`Translation progress for ${job.target_language}`} value={job.done_chunks} max={Math.max(job.total_chunks, 1)} />
         <p className="mt-2">Cost: <span>${job.cost_usd.toFixed(4)}</span></p>
+        {analysisCostUsd !== null && analysisCostUsd > 0 && (
+          <p className="mt-2 text-neutral-300" aria-label={`Document analysis cost, shared by ${analysisSharedBy} translations`}>
+            Document analysis: <span>${analysisCostUsd.toFixed(4)}</span>
+            <span className="block text-sm">shared by {analysisSharedBy} {analysisSharedBy === 1 ? 'translation' : 'translations'}</span>
+          </p>
+        )}
         {job.status === 'completed_with_errors' && <p role="status" className="mt-4 text-amber-300">Untranslated blocks remain in the source language. Retry to translate the remaining blocks.</p>}
         {job.error && <p role="alert" className="mt-3">{catalogError(job.error.error_code).message}</p>}
         {reconnecting && <p role="status" className="mt-3">Reconnecting to live progress…</p>}

@@ -18,6 +18,9 @@ const job = (id: string, documentId = 'doc-1'): JobSummaryResponse => ({
   cache_hit_blocks: 0,
   cache_miss_blocks: 1,
   cost_usd: 0.001,
+  // The batch page reports the document figure from the document endpoint, so
+  // the per-job copy stays at zero here.
+  analysis_cost_usd: 0,
   error: null,
 });
 

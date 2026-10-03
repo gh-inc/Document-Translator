@@ -27,9 +27,10 @@ function parseProgress(value: RecordValue) {
 }
 
 const parseJob: Parser<JobSummaryResponse> = (value) => {
-  if (!record(value) || !text(value.id) || !text(value.document_id) || !text(value.batch_id) || !text(value.target_language)) return null;
+  if (!record(value) || !text(value.id) || !text(value.document_id) || !text(value.batch_id) || !text(value.target_language)
+    || !money(value.analysis_cost_usd)) return null;
   const progress = parseProgress(value);
-  return progress ? { id: value.id, document_id: value.document_id, batch_id: value.batch_id, target_language: value.target_language, ...progress } : null;
+  return progress ? { id: value.id, document_id: value.document_id, batch_id: value.batch_id, target_language: value.target_language, ...progress, analysis_cost_usd: value.analysis_cost_usd } : null;
 };
 
 const parseJobs: Parser<JobSummaryResponse[]> = (value) => {

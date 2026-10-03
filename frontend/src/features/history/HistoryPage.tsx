@@ -39,6 +39,13 @@ export default function HistoryPage() {
   }, [revision]);
 
   const visibleJobs = jobs.filter((job) => status === 'all' || job.status === status);
+  // The analysis cost belongs to the document, so it is shown once per document
+  // instead of repeating on every language translated from the same upload.
+  const groupSizes = new Map<string, number>();
+  for (const job of visibleJobs) {
+    groupSizes.set(job.document_id, (groupSizes.get(job.document_id) ?? 0) + 1);
+  }
+  const shownDocuments = new Set<string>();
 
   return (
     <section aria-labelledby="history-heading">
@@ -59,10 +66,16 @@ export default function HistoryPage() {
       {!loading && !error && jobs.length === 0 && <div><p>No translations yet.</p><Link to="/" className="detail-link mt-3">Translate a document</Link></div>}
       {!loading && !error && jobs.length > 0 && visibleJobs.length === 0 && <p role="status">No translations match this status. Choose another status to see recent translations.</p>}
       {!loading && !error && visibleJobs.length > 0 && <ul className="space-y-6" aria-label="Recent translations">
-        {visibleJobs.map((job) => <li key={job.id}>
-          <JobCard jobId={job.id} initialJob={job} live={false} showDetailsLink onJobUpdate={updateJob} />
-          <Link to={`/batches/${encodeURIComponent(job.batch_id)}`} className="detail-link mt-3">View batch</Link>
-        </li>)}
+        {visibleJobs.map((job) => {
+          const firstOfDocument = !shownDocuments.has(job.document_id);
+          shownDocuments.add(job.document_id);
+          return <li key={job.id}>
+            <JobCard jobId={job.id} initialJob={job} live={false} showDetailsLink onJobUpdate={updateJob}
+                     analysisCostUsd={firstOfDocument ? job.analysis_cost_usd : null}
+                     analysisSharedBy={groupSizes.get(job.document_id) ?? 1} />
+            <Link to={`/batches/${encodeURIComponent(job.batch_id)}`} className="detail-link mt-3">View batch</Link>
+          </li>;
+        })}
       </ul>}
     </section>
   );

@@ -10,7 +10,7 @@ import HistoryPage from './HistoryPage';
 
 vi.mock('../../api/client', () => ({ api: { listRecentJobs: vi.fn(), getJob: vi.fn(), retryJob: vi.fn(), download: vi.fn(), getDocument: vi.fn() } }));
 
-const completed: JobSummaryResponse = { id: 'job-done', document_id: 'doc', batch_id: 'batch/1', target_language: 'German', status: 'done', total_chunks: 4, done_chunks: 4, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0.0123, error: null };
+const completed: JobSummaryResponse = { id: 'job-done', document_id: 'doc', batch_id: 'batch/1', target_language: 'German', status: 'done', total_chunks: 4, done_chunks: 4, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0.0123, analysis_cost_usd: 0.0014, error: null };
 const failed: JobSummaryResponse = { ...completed, id: 'job-failed', target_language: 'Swedish', status: 'failed', done_chunks: 2, error: { error_code: 'provider_timeout', message: 'unsafe server message', retryable: true } };
 
 function renderPage() { return render(<MemoryRouter><HistoryPage /></MemoryRouter>); }
@@ -121,6 +121,35 @@ describe('translation history', () => {
     expect(screen.getByRole('status')).toHaveTextContent('No translations match this status');
     expect(api.listRecentJobs).toHaveBeenCalledTimes(1);
     expect(EventSource).not.toHaveBeenCalled();
+  });
+
+  it('shows the analysis cost once per document and marks it as shared', async () => {
+    vi.mocked(api.listRecentJobs).mockResolvedValue([
+      { ...completed, id: 'job-de', document_id: 'doc-a', target_language: 'German' },
+      { ...completed, id: 'job-fr', document_id: 'doc-a', target_language: 'French' },
+      { ...completed, id: 'job-es', document_id: 'doc-b', target_language: 'Spanish' },
+    ]);
+    renderPage();
+    await screen.findByRole('article', { name: 'Translation to Spanish' });
+    const lines = screen.getAllByText(/Document analysis/);
+    expect(lines[0]).toHaveTextContent('$0.0014');
+    // Two documents, so two lines: one shared by two languages, one by one.
+    expect(lines).toHaveLength(2);
+    expect(screen.getByText('shared by 2 translations')).toBeInTheDocument();
+    expect(screen.getByText('shared by 1 translation')).toBeInTheDocument();
+    // The French card repeats the document but not the figure.
+    const french = screen.getByRole('article', { name: 'Translation to French' });
+    expect(within(french).queryByText(/Document analysis/)).not.toBeInTheDocument();
+  });
+
+  it('hides the analysis line when the document analysis cost is zero', async () => {
+    vi.mocked(api.listRecentJobs).mockResolvedValue([
+      { ...completed, analysis_cost_usd: 0 },
+    ]);
+    renderPage();
+    await screen.findByRole('article', { name: 'Translation to German' });
+    expect(screen.queryByText(/Document analysis/)).not.toBeInTheDocument();
+    expect(screen.getByText('$0.0123')).toBeInTheDocument();
   });
 
   it('keeps filters synchronized with a retry follow-up job refresh', async () => {

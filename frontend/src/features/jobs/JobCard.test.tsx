@@ -11,7 +11,7 @@ import BatchPage from './BatchPage';
 
 vi.mock('../../api/client', async (original) => ({ ...await original<typeof import('../../api/client')>(), api: { getJob: vi.fn(), retryJob: vi.fn(), download: vi.fn(), getDocument: vi.fn(), getBatch: vi.fn() } }));
 
-const job: JobSummaryResponse = { id: 'job-1', document_id: 'doc-1', batch_id: 'batch-1', target_language: 'de', status: 'queued', total_chunks: 4, done_chunks: 0, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0, error: null };
+const job: JobSummaryResponse = { id: 'job-1', document_id: 'doc-1', batch_id: 'batch-1', target_language: 'de', status: 'queued', total_chunks: 4, done_chunks: 0, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0, analysis_cost_usd: 0, error: null };
 class Events {
   static all: Events[] = [];
   static maxLive = 0;

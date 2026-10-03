@@ -36,6 +36,12 @@ export interface JobSummaryResponse {
   cache_hit_blocks: number;
   cache_miss_blocks: number;
   cost_usd: number;
+  /**
+   * Cumulative triage cost of the document, shared by every language translated
+   * from the same upload. Zero means no usage was recorded, which is not the
+   * same as a free analysis.
+   */
+  analysis_cost_usd: number;
   error: JobError | null;
 }
 
