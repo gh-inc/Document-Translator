@@ -1,10 +1,12 @@
 import asyncio
+import os
 from pathlib import Path
 
 import pymupdf
 import pytest
 from aiosqlite import Connection
 from fastmcp import Client
+from structlog.testing import capture_logs
 
 from app.adapters.llm.fake_triage_agent import FakeTriageAgent
 from app.adapters.storage.document_locks import release_document_lock, try_document_lock
@@ -98,6 +100,40 @@ async def test_shutdown_cancels_triage_and_closes_agent(
         await asyncio.wait_for(entered.wait(), timeout=1)
     assert closed.is_set()
     assert not runtime._triage_tasks
+
+
+async def test_startup_reports_an_unusable_shared_output_directory(
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = McpRuntime(mcp_settings)
+    # Probe by intercepting the access check rather than chmod-ing a fixture: a
+    # permission test based on file modes passes silently when the suite runs as
+    # root, which is exactly where this defect would stay invisible.
+    monkeypatch.setattr(os, "access", lambda *_args, **_kwargs: False)
+    try:
+        with capture_logs() as logs:
+            await runtime.startup()
+    finally:
+        await runtime.aclose()
+
+    reports = [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
+    assert reports, "startup did not report an unusable shared output directory"
+    report = reports[0]
+    assert report["log_level"] == "error"
+    assert report["uid"] == os.getuid()
+    assert report["directory_name"] == "output"
+    assert report["remedy"]
+    # No resolved host path may reach the log.
+    assert str(mcp_settings.mcp_shared_dir) not in str(logs)
+
+
+async def test_startup_stays_silent_when_the_shared_output_is_usable(
+    runtime: McpRuntime,
+) -> None:
+    with capture_logs() as logs:
+        await runtime.startup()
+    assert not [log for log in logs if log["event"] == "mcp_shared_dir_not_writable"]
 
 
 async def test_shutdown_releases_claim_cancelled_before_run_starts(

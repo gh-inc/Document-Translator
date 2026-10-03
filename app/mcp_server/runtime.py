@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -77,8 +78,52 @@ class McpRuntime:
             self.settings.output_storage_path,
         ):
             await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
+        await self._report_shared_directory()
         connection = await self.factory.create()
         await _finish_cleanup(connection.close())
+
+    async def _report_shared_directory(self) -> None:
+        """Log one actionable line when a completed translation cannot be written.
+
+        `mkdir(exist_ok=True)` succeeds against a directory owned by another
+        uid, so an unusable share looks healthy until the first download. Reads
+        still work, so this must never stop the server: `translate_file` and
+        `check_status` stay usable and only `download_result` is affected. The
+        remedy is host-side ownership and the service never changes host
+        permissions itself; it provisions the output directory on first use when
+        the mount root allows it. Only the child directory name is logged, never
+        a resolved host path or a listing.
+        """
+        root = self.settings.mcp_shared_dir
+        probe = root / "output"
+        root_writable = await asyncio.to_thread(os.access, root, os.W_OK)
+        # A missing output directory is the healthy case: the download path
+        # creates it under the service uid. Only an existing directory that the
+        # service cannot write is a fault.
+        output_exists = await asyncio.to_thread(probe.exists)
+        if not output_exists:
+            if not root_writable:
+                logger.error(
+                    "mcp_shared_dir_not_writable",
+                    uid=os.getuid(),
+                    directory_name=probe.name,
+                    remedy=(
+                        "grant the service uid write access to the host shared "
+                        "directory; downloads cannot create their output directory"
+                    ),
+                )
+            return
+        if await asyncio.to_thread(os.access, probe, os.W_OK):
+            return
+        logger.error(
+            "mcp_shared_dir_not_writable",
+            uid=os.getuid(),
+            directory_name=probe.name,
+            remedy=(
+                "grant the service uid write access to the host shared directory, "
+                "or remove the output directory so the service creates it itself"
+            ),
+        )
 
     @asynccontextmanager
     async def services(self) -> AsyncIterator[Services]:
