@@ -132,6 +132,20 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-87 | 11 | Bypass structural blocks in enqueue and worker completion | done | 8f52460 |
 | DT-88 | 11 | Wire Markdown detection, REST/MCP/worker and frontend | done | 8f52460 |
 | DT-89 | 11 | Document, review, verify and deliver Markdown support | done | 8f52460 |
+| DT-90 | 11 | Correct MCP download filesystem error mapping and verify delivery | done | pending delivery |
+
+### MCP download error mapping execution (2026-10-03)
+
+DT-90 fixes the operational download error classification defect. Delegated
+implementation, runtime reproduction and independent review used disjoint
+ownership; root owns verification, task tracking and scoped delivery. Red test:
+2 failed / 1 passed; green focused MCP tool/protocol suite: 15 passed. V0/V1
+were captured over real streamable HTTP with the same completed job and broken
+permissions. Codex CLI authentication and scoped-review syntax prevented the
+specified CLI checks; independent review found no actionable issues. V2 requires
+owner permission correction, outside repository scope. Unrelated user edits
+remain excluded. Full verification and delivery evidence:
+[execution record](docs/plans/2026-10-03-mcp-download-error-mapping-execution.md).
 
 ### Triage cost observability execution (2026-10-03)
 

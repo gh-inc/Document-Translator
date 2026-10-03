@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import hashlib
 import os
 import shutil
@@ -74,6 +75,67 @@ async def test_download_complete_partial_and_path_guards(
     result = await tools.download_result(job_id, "output")
     assert isinstance(result, ToolError) and result.error_code is ErrorCode.INVALID_REQUEST
     assert outside_file.read_bytes() == b"untouched"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code", "expected_retryable", "expected_message"),
+    [
+        (
+            PermissionError("private permission detail"),
+            ErrorCode.INTERNAL_ERROR,
+            True,
+            "Internal server error",
+        ),
+        (
+            OSError(errno.ENOSPC, "private disk detail"),
+            ErrorCode.INTERNAL_ERROR,
+            True,
+            "Internal server error",
+        ),
+        (
+            ValueError("private validation detail"),
+            ErrorCode.INVALID_REQUEST,
+            False,
+            "Request validation failed",
+        ),
+    ],
+)
+async def test_download_maps_filesystem_errors_to_internal_error(
+    runtime: McpRuntime,
+    input_pdf: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: ErrorCode,
+    expected_retryable: bool,
+    expected_message: str,
+) -> None:
+    tools = McpTools(runtime)
+    submission = await tools.translate_file(str(input_pdf), ["de"])
+    assert isinstance(submission, TranslationSubmission)
+    job_id = submission.job_ids[0]
+    await runtime.storage.save_output(job_id, b"translated bytes", "sample.pdf")
+    connection = await runtime.factory.create()
+    try:
+        from app.adapters.persistence.repositories import SqliteJobExecutionRepository
+
+        repository = SqliteJobExecutionRepository(connection)
+        async with transaction(connection):
+            await repository.complete_job(job_id, JobStatus.COMPLETED_WITH_ERRORS)
+    finally:
+        await connection.close()
+
+    def raise_failure(*_args: object, **_kwargs: object) -> Path:
+        raise failure
+
+    monkeypatch.setattr("app.mcp_server.server._copy_output", raise_failure)
+
+    result = await tools.download_result(job_id, "output")
+
+    assert isinstance(result, ToolError)
+    assert result.error_code is expected_code
+    assert result.retryable is expected_retryable
+    assert result.message == expected_message
+    assert "private" not in result.model_dump_json()
 
 
 def test_copy_output_treats_job_id_as_data(tmp_path: Path) -> None:

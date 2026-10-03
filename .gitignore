@@ -2,6 +2,7 @@
 .env
 # data & runtime artifacts
 /data/
+mcp-files/
 *.db
 *.db-wal
 *.db-shm

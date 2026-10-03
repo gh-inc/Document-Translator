@@ -153,8 +153,10 @@ class McpTools:
             return DownloadResult(job_id=job.id, path=str(destination))
         except _SAFE_EXCEPTIONS as error:
             return safe_error(error.error_code)
-        except (OSError, ValueError):
+        except ValueError:
             return safe_error(ErrorCode.INVALID_REQUEST)
+        except OSError:
+            return safe_error(ErrorCode.INTERNAL_ERROR)
         except Exception:
             return safe_error(ErrorCode.INTERNAL_ERROR)
 
