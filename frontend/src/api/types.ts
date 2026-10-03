@@ -32,6 +32,8 @@ export interface JobSummaryResponse {
   status: JobStatus;
   total_chunks: number;
   done_chunks: number;
+  cache_hit_blocks: number;
+  cache_miss_blocks: number;
   cost_usd: number;
   error: JobError | null;
 }
@@ -51,6 +53,8 @@ export interface ServerSentEvent {
   status: JobStatus;
   done_chunks: number;
   total_chunks: number;
+  cache_hit_blocks: number;
+  cache_miss_blocks: number;
   cost_usd: number;
   error: JobError | null;
 }

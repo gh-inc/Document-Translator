@@ -30,10 +30,12 @@ from app.core.models import (
     ChunkStatus,
     JobRecord,
     JobStatus,
+    TranslationPlan,
+    TriageStatus,
 )
+from app.core.services.cache_keys import translation_key
 from app.worker import claim_loop
 from app.worker.claim_loop import ClaimLoop
-from app.worker.keys import translation_key
 
 
 class GatedFakeProvider(FakeProvider):
@@ -438,8 +440,23 @@ async def test_claim_loop_recovers_assembling_and_persists_safe_render_failure(
                 async with transaction(connection):
                     for block in document_ir.blocks:
                         await cache_repo.save_block_translation(
-                            translation_key(job),
-                            block.id,
+                            translation_key(
+                                job.target_language,
+                                job.model,
+                                job.prompt_version,
+                                job.glossary,
+                                TranslationPlan(
+                                    source_language="und",
+                                    domain="general",
+                                    register="neutral",
+                                    warnings=[
+                                        "Document analysis was unavailable; "
+                                        "using the degraded plan."
+                                    ],
+                                    triage_status=TriageStatus.DEGRADED,
+                                ),
+                            ),
+                            block.source_hash,
                             f"[de] {block.source_text}",
                         )
 

@@ -60,13 +60,15 @@ translator workflows, or review/approval chains.
    is possible. Attempt and job cost totals include only usage reported by the
    provider and estimate-priced by the application; usage not returned after
    an ambiguous failure is unknown and excluded from those totals.
-2. **Cost discipline:** cached blocks are not bulk-translated again for the
-   same document and language, so repeat bulk translation spend is expected to
-   be near $0; repeated blocks within a document also use the block cache.
-   This repeat-cost outcome has not been measured in a live second-run
-   comparison. Direct cache-hit instrumentation is not persisted or exported
-   today. Job cost totals cover reported chunk usage; document-level triage
-   expense is recorded separately, while unknown provider usage remains excluded.
+2. **Cost discipline:** byte-identical uploads and matching job submissions
+   are idempotent. Edited documents reuse durable translations for exact source
+   text under the same language, model, prompt version, glossary and entire
+   analysis plan. Changed plans invalidate reuse. Repeated paragraphs reuse
+   committed rows; simultaneous misses can still invoke the provider more than
+   once. A cold cache has no hits; measure hit rate over a window. Durable
+   job-level lookup counts expose reuse without claiming measured live savings.
+   Job costs cover reported chunk usage; triage is recorded separately and
+   unknown provider usage remains excluded.
 3. **Multi-language:** one upload → three target languages in one action, each
    tracked, progressed, and billed independently; a failure in one does not
    affect the others.
@@ -259,7 +261,8 @@ delete-and-republish carries the totals forward in the same transaction (§7).
 
 **jobs** — `id`, `document_id`, `batch_id`, `target_language`, `status`
 (`queued → running → assembling → done | completed_with_errors | failed`),
-`total_chunks`, `done_chunks`, `model`, `prompt_version`, `glossary` (JSON,
+`total_chunks`, `done_chunks`, `cache_hit_blocks`, `cache_miss_blocks`,
+`model`, `prompt_version`, `glossary` (JSON,
 target-language rendering), `tokens_in`, `tokens_out`, `cost_usd`,
 `error_code`, `error_detail`, `idempotency_key` (UNIQUE), `lease_owner`,
 `lease_expires_at`, `created_at`, `updated_at`
@@ -271,20 +274,35 @@ target-language rendering), `tokens_in`, `tokens_out`, `cost_usd`,
 `UNIQUE(chunk_id, seq_in_chunk)` — the grouping of blocks into execution
 batches.
 
-**block_translations** (doubles as the translation cache) —
-`translation_key`, `block_id`, `translated_text`, `created_at`.
-`UNIQUE(translation_key, block_id)` where
+**block_translations** (the content-addressed translation cache) —
+`translation_key`, `source_hash`, `translated_text`, `created_at`.
+`PRIMARY KEY(translation_key, source_hash)` where
 
 ```
-translation_key = hash(target_language, model, prompt_version, glossary_hash)
+translation_key = hash(target_language, model, prompt_version, glossary_hash, plan_hash)
 ```
 
-Combined with the block's own `source_hash` identity, the cache key reflects
-**every semantic input** of the translation: source text, source language
-(via the analysis + prompt), target language, model, prompt version, and
-glossary content. A repeated paragraph — within one document or across jobs —
-is translated once. Lookups are `INSERT OR IGNORE` + read-back: even two
-concurrent executions of the same block cannot commit twice.
+The shared core cache-key module hashes canonical JSON. `plan_hash` covers the
+entire rendered `TranslationPlan`, including source language, domain, register,
+terms, warnings and triage status; list order is preserved. Source text enters
+through the block's existing SHA-256 `source_hash`. Document-scoped `block_id`
+is excluded: `blocks.id` is globally unique and the provider needs distinct IDs
+within a request, even for identical text. Cache reads and writes use source
+hashes; rendering still uses each document's original block IDs.
+
+`INSERT OR IGNORE` commits one row per cache identity. Only durable rows skip
+provider calls: duplicate text within one request or concurrent uncached chunks
+can still be sent twice. Neighbouring source context is deliberately excluded
+from the key, so unchanged text may reuse a translation produced under different
+context. Legacy block-ID cache rows are dropped during migration because their
+old keys omit the plan. Done chunk statuses remain; an in-flight job may finish
+with source-text fallbacks and require manual Retry to retranslate cache misses.
+
+Job `cache_hit_blocks` and `cache_miss_blocks` count durable lookup observations
+in a short transaction before provider work. They default to zero and increment
+atomically across chunk tasks. Re-delivery or manual retry may observe and count
+a block again; a crash before the counter transaction can undercount observations.
+The counters measure lookups, not unique blocks or avoided provider billing.
 
 **chunk_attempts** — `id`, `chunk_id`, `attempt_no`, `tokens_in`,
 `tokens_out`, `cost_usd`, `latency_ms`, `outcome`
@@ -318,7 +336,7 @@ connection setup and SQL live in the persistence adapter.
 | Boundary | Guarantee | Mechanism |
 |---|---|---|
 | Enqueue | Idempotent | `idempotency_key` UNIQUE; job+chunks written in one transaction |
-| Committed translation | **Exactly-once** | `UNIQUE(translation_key, block_id)` + `INSERT OR IGNORE` |
+| Committed translation | **Exactly-once** | `PRIMARY KEY(translation_key, source_hash)` + `INSERT OR IGNORE` |
 | Provider invocation | **At-least-once** under ambiguity | No client idempotency key; retries after timeout may be billed twice. Attempt rows and cost totals include reported usage when available; unreturned usage is unknown and excluded, and a process interruption may leave no attempt row. Triage usage is outside `chunk_attempts`. |
 | Job progress | Monotonic, durable | State transitions in short transactions; SSE reads the DB |
 | Worker crash | Resume from last committed chunk | Job lease + **chunk leases**: `inflight` with expired lease → `pending` |
@@ -369,8 +387,8 @@ Chunk:   pending ──claim──► inflight ──all blocks committed──�
 5. **Translate loop (worker)** — claim job (atomic `UPDATE...RETURNING`),
    heartbeat; claim pending chunks with bounded parallelism
    (asyncio semaphore = 8). Per chunk:
-   - collect its blocks lacking a `block_translations` row for this job's key
-     (cache lookup first — re-executions and repeated paragraphs are free);
+   - look up `(translation_key, source_hash)` for each block, record job hit/miss
+     observations, and send only blocks without durable translations;
    - LLM call: system prompt with `TranslationPlan` (domain, register) +
      glossary + **source-side context only**: previous/next *source* blocks
      (all known before any translation starts → zero inter-chunk
@@ -521,6 +539,10 @@ these terms; it is one of the brief's explicit questions.
 | `GET /readyz` | readiness: DB reachable, storage writable, no stale inflight chunk leases |
 | `GET /metrics` | Prometheus |
 
+Job summaries and SSE progress include default-zero `cache_hit_blocks` and
+`cache_miss_blocks`, cumulative lookup counts in blocks, separate from chunk
+progress. The client derives its percentage from hits plus misses.
+
 Errors are structured: `{error_code, message, retryable}` — never bare
 "Something went wrong".
 
@@ -557,7 +579,8 @@ Readiness checks DB, writable storage, and stale inflight chunk leases.
 The grace is `max(120, 2 * CHUNK_LEASE_SECONDS)` seconds beyond expiry;
 idle deployments cannot prove worker liveness using this heuristic.
 Metrics derive job counts and known cost/error totals from persistence;
-cache-hit recording remains deferred. See [REST operating notes](docs/api.md).
+cache totals are durable sums of per-job lookup counts.
+See [REST operating notes](docs/api.md).
 
 ---
 
@@ -585,6 +608,9 @@ and checked for containment, including symlinks. `translate_file` polls the
 document repository for triage completion before creating jobs. Recent-job
 listing is provided by `JobService.list_recent_jobs(limit)` and the REST query
 route above.
+
+MCP job summaries include the same `cache_hit_blocks` and `cache_miss_blocks`
+counts as REST, including `check_status` and recent-job results.
 
 Stage 7 implements the four tools with explicit Pydantic success/error results.
 Polling is bounded by `MCP_TRIAGE_TIMEOUT_SECONDS` (default and maximum 45s),
@@ -616,7 +642,8 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
    `GET /api/documents/{id}` and issues one `POST /api/jobs` once the document
    is `extracted`; it never polls `POST /api/jobs` for readiness.
 2. **Job view** — one card per target language, chunk-level progress bar via
-   SSE, live cost counter; `completed_with_errors` renders distinctly
+   SSE, live cost counter and a cached-block percentage (hits / total lookups);
+   `completed_with_errors` renders distinctly
    ("3 of 412 blocks could not be translated — kept in English. Retry.");
    failure states carry a concrete action.
 3. **History** — past jobs, status filter, re-download.
@@ -672,8 +699,8 @@ colours are hardcoded theme tokens; remote asset hotlinking is rejected
   worker logs claim/heartbeat/retry/commit events.
 - **Metrics (`/metrics`):** `jobs_by_status`, bulk `llm_cost_usd_total`,
   `llm_errors_total`, document `llm_triage_cost_usd_total`, and
-  `llm_triage_tokens_total{direction="input|output"}`. `cache_hits_total` is
-  present as a zero placeholder pending durable instrumentation. Cost metrics
+  `llm_triage_tokens_total{direction="input|output"}`, `cache_hits_total` and
+  `cache_misses_total`, aggregated from durable job columns. Cost metrics
   represent provider-reported usage estimates, not total billing; bulk and
   document-level triage series remain separate.
 - **Health:** `/healthz` (liveness) and `/readyz` (DB, storage,
@@ -687,7 +714,10 @@ cost totals are estimates from provider-reported usage, not complete billing.
 `llm_triage_tokens_total{direction="input|output"}` read cumulative analysis
 columns independently of jobs. A fresh registry per scrape prevents recounting,
 and durable totals survive restart.
-`cache_hits_total` remains zero without persisted hit instrumentation.
+`cache_hits_total` and `cache_misses_total` sum job lookup counts and survive
+restart without being recounted by scrapes. Window hit rate is
+`Δhits / (Δhits + Δmisses)` when the denominator is positive. Re-delivery
+may count another observation; a crash before persistence can omit one.
 Latency histograms, error-code labels, retry-share metrics, and direct worker
 heartbeat age are not exported; the measurement command derives available
 latencies and known retry spend from `chunk_attempts`, but cannot include usage

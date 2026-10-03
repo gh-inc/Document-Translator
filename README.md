@@ -27,7 +27,7 @@ linguists who need computer-assisted translation (CAT) tools and workflows.
 | Acceptance criterion | Implementation and known limit |
 | --- | --- |
 | Resilience | SQLite WAL and chunk leases let a restarted worker resume from committed work after `kill -9`. A committed translation is not repeated; a provider timeout with an unknown outcome can still cause a duplicate invocation and unreported billing. |
-| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. The `cache_hits_total` metric is deferred and stays zero; document triage spend is persisted separately from job spend; billing from ambiguous invocations with unknown usage remains excluded. |
+| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. `cache_hits_total` and `cache_misses_total` sum durable job lookup counts; document triage spend is persisted separately from job spend; billing from ambiguous invocations with unknown usage remains excluded. |
 | Multi-language | One submission creates independently tracked jobs per target language, with separate progress and cost. A failure in one language does not stop the others. |
 
 | Hard requirement | Where it lives |
@@ -102,6 +102,8 @@ translations. For real translation choose `LLM_PROVIDER=openai` and configure
 the API key through application Settings; `.env.example` lists placeholders.
 Environment variables must be exported; application Settings do not automatically
 load `.env`. Compose loads `.env` and passes supported settings to every process.
+
+Re-uploading an edited document reuses unchanged text when the analysis plan and other cache inputs match; the UI shows the cached share of block lookups.
 
 ## Frontend development
 
@@ -328,7 +330,7 @@ cost/token totals. `llm_triage_tokens_total` uses `direction="input"` and
 `_total` columns accumulate known usage from every attempt. Scrapes and restarts
 do not recount it. Existing database rows migrate with zeros; triage spend before
 this instrumentation is permanently unrecorded.
-`cache_hits_total` is zero because hits are not persisted; latency distributions
+`cache_hits_total` and `cache_misses_total` sum durable per-job lookup counts; latency distributions
 and retry spend are obtained from SQLite by the measurement command. Unknown
 usage from a killed or timed-out invocation cannot be reconstructed from a
 missing attempt row. See [operator notes](docs/ops.md) and

@@ -125,6 +125,8 @@ async def event_stream(
             status=job.status,
             done_chunks=job.done_chunks,
             total_chunks=job.total_chunks,
+            cache_hit_blocks=job.cache_hit_blocks,
+            cache_miss_blocks=job.cache_miss_blocks,
             cost_usd=job.cost_usd,
             error=_safe_job_error(job.error_code),
         )
@@ -176,6 +178,8 @@ def _summary(job: JobRecord) -> JobSummaryResponse:
         status=job.status,
         total_chunks=job.total_chunks,
         done_chunks=job.done_chunks,
+        cache_hit_blocks=job.cache_hit_blocks,
+        cache_miss_blocks=job.cache_miss_blocks,
         cost_usd=job.cost_usd,
         error=_safe_job_error(job.error_code),
     )

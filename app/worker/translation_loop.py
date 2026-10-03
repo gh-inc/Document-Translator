@@ -30,8 +30,8 @@ from app.core.ports import (
     LLMProvider,
     TranslationCacheRepository,
 )
+from app.core.services.cache_keys import translation_key
 from app.worker.executor import Executor
-from app.worker.keys import translation_key
 
 logger = structlog.get_logger(__name__)
 
@@ -77,16 +77,26 @@ class TranslationLoop:
             await self._complete_chunk(job, chunk)
             return
 
-        key = translation_key(job)
+        key = translation_key(
+            job.target_language, job.model, job.prompt_version, job.glossary, plan
+        )
         async with self._persistence.read():
             cached: dict[str, str] = {}
             for block in ordered_blocks:
-                translation = await self._cache_repo.get_block_translation(key, block.id)
+                translation = await self._cache_repo.get_block_translation(key, block.source_hash)
                 if translation is not None:
                     cached[block.id] = translation
             first_attempt_no = await self._persistence.next_attempt_no(chunk.id)
 
         missing = [block for block in ordered_blocks if block.id not in cached]
+        # Record durable observations in a short transaction, including paths
+        # that later fail before a provider result is committed. A recovered
+        # chunk may observe the cache again and legitimately add another count.
+        async with self._persistence.write():
+            await self._persistence.ensure_owned(job.id, self._settings.worker_id, chunk.id)
+            await self._job_repo.record_job_cache_counts(
+                job.id, hits=len(cached), misses=len(missing)
+            )
         if not missing:
             await self._complete_chunk(job, chunk)
             logger.info(
@@ -124,7 +134,6 @@ class TranslationLoop:
             context_before=context_before,
             context_after=context_after,
         )
-        key = translation_key(job)
         calls_started = 0
 
         async def invoke_provider() -> tuple[ChunkResult, int]:
@@ -408,7 +417,7 @@ class TranslationLoop:
             await self._persistence.ensure_owned(job.id, self._settings.worker_id, chunk.id)
             for block in missing:
                 await self._cache_repo.save_block_translation(
-                    key, block.id, result.translations[block.id]
+                    key, block.source_hash, result.translations[block.id]
                 )
             attempt_no = await self._persistence.next_attempt_no(chunk.id)
             await self._job_repo.record_chunk_attempt(

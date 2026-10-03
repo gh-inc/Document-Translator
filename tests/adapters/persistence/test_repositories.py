@@ -10,6 +10,7 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
+from app.adapters.persistence.api import ApiPersistence
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import (
     SqliteDocumentRepository,
@@ -848,11 +849,67 @@ async def test_cache_write_is_idempotent_first_translation_wins(
         aiosqlite.Connection,
     ],
 ) -> None:
-    document_repository, _, cache_repository, connection = repositories
-    await _seed_document(document_repository, [_block()])
+    _, _, cache_repository, connection = repositories
     async with transaction(connection):
-        await cache_repository.save_block_translation("key-1", "block-1", "Hallo")
+        await cache_repository.save_block_translation("key-1", "hash-1", "Hallo")
     async with transaction(connection):
-        await cache_repository.save_block_translation("key-1", "block-1", "Überschrieben")
-    assert await cache_repository.get_block_translation("key-1", "block-1") == "Hallo"
-    assert await cache_repository.get_block_translation("missing", "block-1") is None
+        await cache_repository.save_block_translation("key-1", "hash-1", "Überschrieben")
+    assert await cache_repository.get_block_translation("key-1", "hash-1") == "Hallo"
+    assert await cache_repository.get_block_translation("missing", "hash-1") is None
+    assert await cache_repository.get_block_translation("key-1", "hash-2") is None
+    async with connection.execute(
+        "SELECT COUNT(*) FROM block_translations WHERE source_hash = 'hash-1'"
+    ) as cursor:
+        assert (await cursor.fetchone())[0] == 1
+
+
+async def test_job_cache_counts_accumulate_and_reject_negative_values(
+    repositories: tuple[
+        SqliteDocumentRepository,
+        SqliteJobExecutionRepository,
+        SqliteTranslationCacheRepository,
+        aiosqlite.Connection,
+    ],
+) -> None:
+    document_repository, job_repository, _, connection = repositories
+    await _seed_job(document_repository, job_repository)
+    async with transaction(connection):
+        await job_repository.record_job_cache_counts("job-1", hits=2, misses=1)
+        await job_repository.record_job_cache_counts("job-1", hits=3, misses=0)
+    job = await job_repository.get_job("job-1")
+    assert job is not None
+    assert (job.cache_hit_blocks, job.cache_miss_blocks) == (5, 1)
+    with pytest.raises(ValueError, match="negative"):
+        async with transaction(connection):
+            await job_repository.record_job_cache_counts("job-1", hits=-1, misses=0)
+
+
+async def test_cache_metrics_are_durable_and_scrape_does_not_add_counts(
+    repositories: tuple[
+        SqliteDocumentRepository,
+        SqliteJobExecutionRepository,
+        SqliteTranslationCacheRepository,
+        aiosqlite.Connection,
+    ],
+    tmp_path: Path,
+) -> None:
+    document_repository, job_repository, _, connection = repositories
+    await _seed_job(document_repository, job_repository)
+    async with transaction(connection):
+        await job_repository.record_job_cache_counts("job-1", hits=2, misses=1)
+    first = await ApiPersistence(connection).metrics_snapshot()
+    second = await ApiPersistence(connection).metrics_snapshot()
+    assert (first["cache_hits_total"], first["cache_misses_total"]) == (2, 1)
+    assert (second["cache_hits_total"], second["cache_misses_total"]) == (2, 1)
+
+    reopened = await SqliteConnectionFactory(
+        tmp_path / "repositories.db", init_schema=False
+    ).create()
+    try:
+        after_restart = await ApiPersistence(reopened).metrics_snapshot()
+        assert (after_restart["cache_hits_total"], after_restart["cache_misses_total"]) == (
+            2,
+            1,
+        )
+    finally:
+        await reopened.close()

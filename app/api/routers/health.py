@@ -43,7 +43,8 @@ async def metrics(service: Annotated[HealthService, Depends(get_health_service)]
         ("llm_cost_usd_total", "Known billed provider cost in USD"),
         ("llm_triage_cost_usd_total", "Known triage provider cost in USD"),
         ("llm_errors_total", "Persisted unsuccessful provider attempts"),
-        ("cache_hits_total", "Cache hits; persistence instrumentation is deferred"),
+        ("cache_hits_total", "Blocks served from the translation cache"),
+        ("cache_misses_total", "Block translations absent from the cache"),
     ):
         metric = Counter(name, description, registry=registry)
         metric.inc(cast(float, snapshot[name]))

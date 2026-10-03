@@ -134,6 +134,8 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-89 | 11 | Document, review, verify and deliver Markdown support | done | 8f52460 |
 | DT-90 | 11 | Correct MCP download filesystem error mapping and verify delivery | done | 7f2c224 |
 
+| DT-91 | 11 | Content-address translation cache, plan isolation, durable counters and UI | done | pending delivery hash |
+
 ### MCP download error mapping execution (2026-10-03)
 
 DT-90 fixes the operational download error classification defect. Delegated
@@ -455,3 +457,20 @@ Acceptance: 476 backend tests and 66 frontend tests passed; lint, backend and
 frontend typecheck, production build, 16 real-browser PDF/DOCX checks, and five
 eight-job HTTP/1.1 capacity checks passed. Fake providers only. Detailed decisions
 and evidence: [Stage 8 execution record](docs/plans/2026-10-02-stage-8-frontend-execution.md).
+
+### Content-addressed translation cache execution (2026-10-03)
+
+DT-91 implements the approved cache plan across persistence, worker, retry,
+REST/SSE/MCP, metrics and frontend, with disjoint delegated ownership and an
+independent review. Cache identity now combines source hashes with language,
+model, prompt, glossary and the entire analysis plan. Durable lookup counters
+feed all presentation surfaces. Legacy cache rows are discarded on migration;
+in-flight jobs may need manual Retry. Concurrent startup testing also fixed
+WAL activation races. Neighbour context remains excluded as approved.
+
+Acceptance: 597 backend tests passed, 2 live tests deselected; 71 frontend
+tests, production build, lint and backend/frontend typecheck passed. No live
+provider calls or push. Pre-existing user edits are excluded from delivery.
+The execution record includes ownership, plan corrections, red/green regression
+proof, migration behavior, and measured agent token accounting.
+See [DT-91 execution](docs/plans/2026-10-03-content-addressed-translation-cache-execution.md).

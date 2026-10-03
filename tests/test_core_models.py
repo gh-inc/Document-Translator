@@ -199,7 +199,7 @@ MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
         BlockTranslationRecord,
         {
             "translation_key": "key-1",
-            "block_id": "block-1",
+            "source_hash": "hash-1",
             "translated_text": "Hallo",
             "created_at": CREATED_AT,
         },

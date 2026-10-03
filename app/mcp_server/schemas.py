@@ -1,6 +1,6 @@
 """Explicit structured results for the editor translation workflow."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.errors import ErrorCode, catalog_entry
 from app.core.models import DocumentStatus, JobRecord, JobStatus
@@ -31,6 +31,8 @@ class JobSummary(ResultModel):
     status: JobStatus
     total_chunks: int
     done_chunks: int
+    cache_hit_blocks: int = Field(default=0, ge=0)
+    cache_miss_blocks: int = Field(default=0, ge=0)
     cost_usd: float
     error: ToolError | None
 
@@ -71,6 +73,8 @@ def job_summary(job: JobRecord) -> JobSummary:
         status=job.status,
         total_chunks=job.total_chunks,
         done_chunks=job.done_chunks,
+        cache_hit_blocks=job.cache_hit_blocks,
+        cache_miss_blocks=job.cache_miss_blocks,
         cost_usd=job.cost_usd,
         error=safe_error(job.error_code) if job.error_code is not None else None,
     )

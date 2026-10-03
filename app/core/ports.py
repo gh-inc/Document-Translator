@@ -121,6 +121,8 @@ class JobExecutionRepository(Protocol):
         done_chunks: int,
     ) -> None: ...
 
+    async def record_job_cache_counts(self, job_id: str, *, hits: int, misses: int) -> None: ...
+
     async def complete_job(
         self,
         job_id: str,
@@ -162,13 +164,13 @@ class TranslationCacheRepository(Protocol):
     async def get_block_translation(
         self,
         translation_key: str,
-        block_id: str,
+        source_hash: str,
     ) -> str | None: ...
 
     async def save_block_translation(
         self,
         translation_key: str,
-        block_id: str,
+        source_hash: str,
         translated_text: str,
     ) -> None: ...
 

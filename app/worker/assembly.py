@@ -10,7 +10,7 @@ import structlog
 
 from app.adapters.persistence.worker import LeaseLostError, WorkerPersistence
 from app.core.errors import DocumentError, ErrorCode
-from app.core.models import Block, JobRecord, JobStatus
+from app.core.models import Block, JobRecord, JobStatus, TranslationPlan
 from app.core.ports import (
     DocumentRepository,
     FileStorage,
@@ -18,7 +18,7 @@ from app.core.ports import (
     JobExecutionRepository,
     TranslationCacheRepository,
 )
-from app.worker.keys import translation_key
+from app.core.services.cache_keys import translation_key
 
 _logger = structlog.get_logger(__name__)
 
@@ -43,12 +43,24 @@ class Assembly:
         self._file_storage = file_storage
         self._persistence = persistence
 
-    async def render(self, job: JobRecord) -> JobStatus:
+    async def render(self, job: JobRecord, plan: TranslationPlan | None = None) -> JobStatus:
         """Render from cache, publish the output, and persist the final status."""
         async with self._persistence.read():
             document = await self._document_repo.get_document(job.document_id)
             blocks = await self._document_repo.get_blocks(job.document_id)
-            translations = await self._load_translations(job, blocks)
+            if plan is None:
+                analysis = await self._document_repo.get_analysis(job.document_id)
+                if analysis is None:
+                    raise DocumentError(ErrorCode.RENDER_FAILED)
+                plan = TranslationPlan(
+                    source_language=analysis.source_language,
+                    domain=analysis.domain,
+                    register=analysis.register,
+                    terms=analysis.terms,
+                    warnings=analysis.warnings,
+                    triage_status=analysis.triage_status,
+                )
+            translations = await self._load_translations(job, blocks, plan)
 
         if document is None:
             raise DocumentError(ErrorCode.RENDER_FAILED)
@@ -132,11 +144,14 @@ class Assembly:
         self,
         job: JobRecord,
         blocks: list[Block],
+        plan: TranslationPlan,
     ) -> dict[str, str]:
-        key = translation_key(job)
+        key = translation_key(
+            job.target_language, job.model, job.prompt_version, job.glossary, plan
+        )
         translations: dict[str, str] = {}
         for block in blocks:
-            translated_text = await self._cache_repo.get_block_translation(key, block.id)
+            translated_text = await self._cache_repo.get_block_translation(key, block.source_hash)
             if translated_text is not None:
                 translations[block.id] = translated_text
         return translations

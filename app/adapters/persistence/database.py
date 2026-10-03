@@ -56,6 +56,26 @@ async def _close_cursor(connection: Connection, statement: str) -> str:
         return str(row[0]) if row is not None else ""
 
 
+async def _initialize_wal(connection: Connection) -> str:
+    """Retry WAL activation when simultaneous starters race on a legacy file.
+
+    SQLite can return SQLITE_BUSY immediately from ``journal_mode=WAL`` even
+    after busy_timeout is set, because switching journal modes needs an
+    exclusive lock. Retry for up to 20 seconds; a final SQLite busy wait may
+    extend the total startup time.
+    """
+    deadline = asyncio.get_running_loop().time() + 20.0
+    while True:
+        try:
+            return await _close_cursor(connection, "PRAGMA journal_mode=WAL")
+        except aiosqlite.OperationalError as error:
+            locked = "locked" in str(error).casefold()
+            expired = asyncio.get_running_loop().time() >= deadline
+            if not locked or expired:
+                raise
+            await asyncio.sleep(0.05)
+
+
 async def _read_schema(path: Path) -> str:
     return await asyncio.to_thread(path.read_text, encoding="utf-8")
 
@@ -99,6 +119,53 @@ async def _migrate_document_analysis_usage(connection: Connection) -> None:
                     f"ALTER TABLE document_analyses ADD COLUMN {name} {definition}"
                 ):
                     pass
+
+
+async def _migrate_translation_cache(connection: Connection) -> None:
+    """Replace legacy block-ID cache rows and add durable job counters.
+
+    The semantic key now includes the analysis plan, so old rows cannot be
+    reused safely. Inspect before taking a write lock and recheck under the
+    lock to allow concurrent initializers to finish the same migration.
+    """
+
+    async def legacy_cache() -> bool:
+        async with connection.execute("PRAGMA table_info(block_translations)") as cursor:
+            columns = {str(row[1]) for row in await cursor.fetchall()}
+        return "block_id" in columns
+
+    async def missing_counters() -> list[str]:
+        async with connection.execute("PRAGMA table_info(jobs)") as cursor:
+            columns = {str(row[1]) for row in await cursor.fetchall()}
+        if not columns:
+            return []
+        return [name for name in ("cache_hit_blocks", "cache_miss_blocks") if name not in columns]
+
+    if not await legacy_cache() and not await missing_counters():
+        return
+
+    async with transaction(connection):
+        if await legacy_cache():
+            async with connection.execute("DROP TABLE block_translations"):
+                pass
+            async with connection.execute(
+                "CREATE TABLE block_translations ("
+                "translation_key TEXT NOT NULL, source_hash TEXT NOT NULL, "
+                "translated_text TEXT NOT NULL, "
+                "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                "PRIMARY KEY (translation_key, source_hash))"
+            ):
+                pass
+            async with connection.execute(
+                "CREATE INDEX idx_block_translations_lookup "
+                "ON block_translations(translation_key, source_hash)"
+            ):
+                pass
+        for name in await missing_counters():
+            async with connection.execute(
+                f"ALTER TABLE jobs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0"
+            ):
+                pass
 
 
 async def _finish_cleanup(awaitable: Awaitable[object]) -> None:
@@ -168,7 +235,7 @@ class SqliteConnectionFactory:
 
             # busy_timeout must be installed before requesting WAL mode.
             await _close_cursor(connection, "PRAGMA busy_timeout=20000")
-            journal_mode = await _close_cursor(connection, "PRAGMA journal_mode=WAL")
+            journal_mode = await _initialize_wal(connection)
             await _close_cursor(connection, "PRAGMA synchronous=NORMAL")
             await _close_cursor(connection, "PRAGMA foreign_keys=ON")
 
@@ -180,6 +247,10 @@ class SqliteConnectionFactory:
                 )
 
             if self._init_schema:
+                # A legacy cache may lack its old named index. Running the new
+                # DDL first would try to create the source_hash index on the
+                # still-legacy table and fail before migration can replace it.
+                await _migrate_translation_cache(connection)
                 schema = await _read_schema(SCHEMA_PATH)
                 async with connection.executescript(schema):
                     pass

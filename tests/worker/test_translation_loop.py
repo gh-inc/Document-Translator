@@ -37,7 +37,7 @@ from app.core.models import (
     TriageStatus,
 )
 from app.core.ports import CostCalculator
-from app.worker.keys import translation_key
+from app.core.services.cache_keys import translation_key
 from app.worker.translation_loop import TranslationLoop
 
 
@@ -270,7 +270,11 @@ async def test_partial_cache_sends_only_missing_blocks_and_source_neighbors(
     assert isinstance(connection, aiosqlite.Connection)
     async with transaction(connection):
         await cache_repo.save_block_translation(  # type: ignore[union-attr]
-            translation_key(job), blocks[1].id, "Cached source"
+            translation_key(
+                job.target_language, job.model, job.prompt_version, job.glossary, fixture["plan"]
+            ),
+            blocks[1].source_hash,
+            "Cached source",
         )
 
     provider = TrackingFakeProvider()
@@ -289,9 +293,15 @@ async def test_partial_cache_sends_only_missing_blocks_and_source_neighbors(
     assert [block.id for block in request.context_before] == ["block-0"]
     assert [block.id for block in request.context_after] == ["block-3"]
     translated = await cache_repo.get_block_translation(  # type: ignore[union-attr]
-        translation_key(job), "block-2"
+        translation_key(
+            job.target_language, job.model, job.prompt_version, job.glossary, fixture["plan"]
+        ),
+        blocks[2].source_hash,
     )
     assert translated == "[de] Source paragraph 2"
+    refreshed = await fixture["job_repo"].get_job(job.id)  # type: ignore[union-attr]
+    assert refreshed is not None
+    assert (refreshed.cache_hit_blocks, refreshed.cache_miss_blocks) == (1, 1)
     assert (await _chunk_state(connection)) == ("done", 1)
     attempts = await _attempt_rows(connection)
     assert [(int(row[0]), str(row[1])) for row in attempts] == [(1, "ok")]
@@ -311,7 +321,15 @@ async def test_all_cached_chunk_completes_without_provider_call(
     async with transaction(connection):
         for block in blocks[1:3]:
             await cache_repo.save_block_translation(  # type: ignore[union-attr]
-                translation_key(job), block.id, f"cached {block.id}"
+                translation_key(
+                    job.target_language,
+                    job.model,
+                    job.prompt_version,
+                    job.glossary,
+                    fixture["plan"],
+                ),
+                block.source_hash,
+                f"cached {block.id}",
             )
 
     provider = TrackingFakeProvider()
@@ -324,8 +342,37 @@ async def test_all_cached_chunk_completes_without_provider_call(
     )
 
     assert provider.requests == []
+    refreshed = await fixture["job_repo"].get_job(job.id)  # type: ignore[union-attr]
+    assert refreshed is not None
+    assert (refreshed.cache_hit_blocks, refreshed.cache_miss_blocks) == (2, 0)
     assert await _chunk_state(connection) == ("done", 1)
     assert await _attempt_rows(connection) == []
+
+
+async def test_repeated_content_without_durable_entry_counts_two_misses(
+    worker_fixture: dict[str, object],
+) -> None:
+    job = worker_fixture["job"]
+    chunk = worker_fixture["chunk"]
+    blocks = worker_fixture["blocks"]
+    assert isinstance(job, JobRecord) and isinstance(chunk, ChunkRecord)
+    assert isinstance(blocks, list)
+    duplicate = blocks[2].model_copy(
+        update={"source_text": blocks[1].source_text, "source_hash": blocks[1].source_hash}
+    )
+    provider = TrackingFakeProvider()
+    await _loop(worker_fixture, provider).process_chunk(
+        job,
+        chunk,
+        [blocks[1], duplicate],
+        blocks,
+        worker_fixture["plan"],  # type: ignore[arg-type]
+    )
+    assert len(provider.requests) == 1
+    assert [block.id for block in provider.requests[0].blocks] == ["block-1", "block-2"]
+    refreshed = await worker_fixture["job_repo"].get_job(job.id)  # type: ignore[union-attr]
+    assert refreshed is not None
+    assert (refreshed.cache_hit_blocks, refreshed.cache_miss_blocks) == (0, 2)
 
 
 async def test_retry_attempt_numbers_resume_from_persisted_history(
@@ -421,6 +468,9 @@ async def test_cost_cap_blocks_call_and_persists_safe_terminal_reason(
     assert (int(rows[0][0]), str(rows[0][1]), float(rows[0][2])) == (1, "fatal_error", 0.0)
     assert rows[0][4] == ProviderError(ErrorCode.COST_CAP_EXCEEDED).message
     assert (await _chunk_state(connection)) == ("done", 1)
+    refreshed = await fixture["job_repo"].get_job(job.id)  # type: ignore[union-attr]
+    assert refreshed is not None
+    assert (refreshed.cache_hit_blocks, refreshed.cache_miss_blocks) == (0, 2)
 
 
 async def test_concurrent_chunks_reserve_soft_cap_before_provider_calls(
@@ -559,13 +609,19 @@ async def test_success_checkpoint_rolls_back_as_one_transaction(
 
     assert (
         await cache_repo.get_block_translation(  # type: ignore[union-attr]
-            translation_key(job), blocks[1].id
+            translation_key(
+                job.target_language, job.model, job.prompt_version, job.glossary, fixture["plan"]
+            ),
+            blocks[1].source_hash,
         )
         is None
     )
     assert (
         await cache_repo.get_block_translation(  # type: ignore[union-attr]
-            translation_key(job), blocks[2].id
+            translation_key(
+                job.target_language, job.model, job.prompt_version, job.glossary, fixture["plan"]
+            ),
+            blocks[2].source_hash,
         )
         is None
     )

@@ -543,3 +543,38 @@ verified from durable state using the `sqlite3` CLI against `chunk_attempts`,
 translation and is re-executed by design, attempt rows may increase for exactly
 that chunk. The guaranteed invariant is that committed translations are never
 re-requested and never duplicated.
+
+## 11. Decision record: content-addressed translation cache
+
+**Context.** A two-word edit changed the document digest and every block ID,
+so unchanged paragraphs missed the old document-scoped cache. The provider
+renders the entire analysis plan, but the old key did not include it.
+
+**Decision.** Key durable translations by exact source SHA-256 plus target
+language, model, prompt version, canonical glossary and the entire rendered
+plan. Keep block IDs document-scoped. Exclude neighbouring source context,
+as approved by the owner, to retain reuse when adjacent paragraphs change.
+Drop legacy cache rows rather than backfill keys that cannot be produced again.
+
+**Why and consequence.** Many business paragraphs are self-contained, making
+exact reuse useful; hashing neighbours would invalidate unchanged paragraphs
+on common edits. A context-dependent paragraph can reuse a translation whose
+meaning differs from a fresh translation in its new surroundings. This is an
+accepted quality trade-off, reversible by adding neighbour hashes. Hit/miss
+metrics measure reuse, not semantic correctness or this quality risk.
+
+**Measured presentation.** Default-zero job counts feed REST, SSE, MCP and
+Prometheus. The UI derives its percentage over hit plus miss observations and
+labels the unit as blocks, not execution chunks. Lookups are counted durably
+before provider work, including failed executions; retry/re-delivery may add
+another observation. A crash before this write can undercount. Simultaneous
+misses can invoke the provider twice while committing one cache row.
+
+**Rejected.** Content-derived block IDs (global PK/provider ID conflicts),
+embedding/fuzzy matching (not exact semantic reuse), neighbour-hashed keys
+(reduced reuse), and a server-computed ratio (duplicate rounding definition).
+
+**Verification and measurements.** Offline FakeProvider regression evidence
+will be recorded in the execution record. No live repeat-cost comparison is
+claimed; cache hits skip bulk provider calls but do not prove total billing
+savings or remove independent triage/glossary work.

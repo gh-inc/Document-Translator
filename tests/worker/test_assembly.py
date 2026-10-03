@@ -19,6 +19,7 @@ from app.core.models import (
     JobRecord,
     JobStatus,
     RenderResult,
+    TranslationPlan,
 )
 from app.worker.assembly import Assembly
 
@@ -105,15 +106,18 @@ class FakeDocumentRepository:
     async def get_blocks(self, document_id: str) -> list[Block]:
         return self.blocks
 
+    async def get_analysis(self, document_id: str) -> TranslationPlan:
+        return TranslationPlan(source_language="en", domain="general", register="neutral")
+
 
 class FakeCacheRepository:
     def __init__(self, translations: dict[str, str]) -> None:
         self.translations = translations
         self.lookups: list[str] = []
 
-    async def get_block_translation(self, translation_key: str, block_id: str) -> str | None:
-        self.lookups.append(block_id)
-        return self.translations.get(block_id)
+    async def get_block_translation(self, translation_key: str, source_hash: str) -> str | None:
+        self.lookups.append(source_hash)
+        return self.translations.get(source_hash)
 
 
 class FakeJobRepository:
@@ -191,7 +195,13 @@ def _assembly(
     renderer = FakeRenderer(persistence)
     storage = FakeStorage(tmp_path / "source.pdf", persistence)
     job_repo = FakeJobRepository(persistence)
-    cache_repo = FakeCacheRepository(translations)
+    cache_repo = FakeCacheRepository(
+        {
+            block.source_hash: translations[block.id]
+            for block in _blocks()
+            if block.id in translations
+        }
+    )
     assembly = Assembly(
         job_repo,
         cache_repo,
@@ -214,7 +224,7 @@ async def test_assembly_uses_cache_and_completes_job_done(tmp_path: Path) -> Non
 
     assert status is JobStatus.DONE
     assert renderer.translations == {"block-1": "Hallo", "block-2": "Welt"}
-    assert cache_repo.lookups == ["block-1", "block-2"]
+    assert cache_repo.lookups == ["source-1", "source-2"]
     assert storage.saved == [("job-1", b"rendered document", "source.pdf")]
     assert job_repo.completed == [("job-1", JobStatus.DONE)]
 
@@ -330,7 +340,7 @@ async def test_assembly_reports_real_pdf_sample_degradation_with_complete_cache(
 ) -> None:
     source = Path(__file__).parents[2] / "samples" / f"{fixture_name}.pdf"
     document = await PdfExtractor().extract(source, "document-1")
-    translations = {block.id: f"[de] {block.source_text}" for block in document.blocks}
+    translations = {block.source_hash: f"[de] {block.source_text}" for block in document.blocks}
     persistence = FakePersistence()
     storage = FakeStorage(source, persistence)
     job_repo = FakeJobRepository(persistence)

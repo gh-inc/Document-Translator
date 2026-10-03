@@ -215,7 +215,7 @@ wait_for_job_state "$job_id"
 before_done=$(db_query "SELECT id || '|' || seq FROM chunks WHERE job_id='$job_id' AND status='done' ORDER BY seq;")
 before_attempts=$(db_query "SELECT c.id || '|' || COUNT(a.id) FROM chunks c LEFT JOIN chunk_attempts a ON a.chunk_id=c.id WHERE c.job_id='$job_id' GROUP BY c.id ORDER BY c.seq;")
 before_attempt_total=$(db_query "SELECT COUNT(*) FROM chunk_attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.job_id='$job_id';" | tail -n 1)
-before_translation_total=$(db_query "SELECT COUNT(*) FROM block_translations t JOIN blocks b ON b.id=t.block_id WHERE b.document_id='$document_id';" | tail -n 1)
+before_translation_total=$(db_query "SELECT COUNT(*) FROM block_translations t JOIN blocks b ON b.source_hash=t.source_hash WHERE b.document_id='$document_id';" | tail -n 1)
 done_before=$(db_query "SELECT COUNT(*) FROM chunks WHERE job_id='$job_id' AND status='done';" | tail -n 1)
 inflight_before=$(db_query "SELECT id FROM chunks WHERE job_id='$job_id' AND status='inflight' LIMIT 1;" | tail -n 1)
 [ -n "$inflight_before" ] || die 'no inflight chunk found at the kill point'
@@ -243,8 +243,9 @@ esac
 after_done=$(db_query "SELECT id || '|' || seq FROM chunks WHERE job_id='$job_id' AND status='done' ORDER BY seq;")
 after_attempts=$(db_query "SELECT c.id || '|' || COUNT(a.id) FROM chunks c LEFT JOIN chunk_attempts a ON a.chunk_id=c.id WHERE c.job_id='$job_id' GROUP BY c.id ORDER BY c.seq;")
 after_attempt_total=$(db_query "SELECT COUNT(*) FROM chunk_attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.job_id='$job_id';" | tail -n 1)
-after_translation_total=$(db_query "SELECT COUNT(*) FROM block_translations t JOIN blocks b ON b.id=t.block_id WHERE b.document_id='$document_id';" | tail -n 1)
+after_translation_total=$(db_query "SELECT COUNT(*) FROM block_translations t JOIN blocks b ON b.source_hash=t.source_hash WHERE b.document_id='$document_id';" | tail -n 1)
 block_total=$(db_query "SELECT COUNT(*) FROM blocks WHERE document_id='$document_id';" | tail -n 1)
+distinct_source_total=$(db_query "SELECT COUNT(DISTINCT source_hash) FROM blocks WHERE document_id='$document_id';" | tail -n 1)
 done_after=$(db_query "SELECT COUNT(*) FROM chunks WHERE job_id='$job_id' AND status='done';" | tail -n 1)
 unfinished_after=$(db_query "SELECT COUNT(*) FROM chunks WHERE job_id='$job_id' AND status!='done';" | tail -n 1)
 
@@ -265,8 +266,8 @@ while IFS='|' read -r chunk_id _seq; do
     [ "$after_count" -eq "$before_count" ] || die "previously committed chunk $chunk_id gained attempts ($before_count -> $after_count)"
 done <<< "$before_done"
 
-unique_translation_total=$(db_query "SELECT COUNT(DISTINCT t.translation_key || ':' || t.block_id) FROM block_translations t JOIN blocks b ON b.id=t.block_id WHERE b.document_id='$document_id';" | tail -n 1)
-[ "$unique_translation_total" -eq "$after_translation_total" ] || die 'duplicate committed translation identities were observed'
+unique_translation_total=$(db_query "SELECT COUNT(DISTINCT t.translation_key || ':' || t.source_hash) FROM block_translations t JOIN blocks b ON b.source_hash=t.source_hash WHERE b.document_id='$document_id';" | tail -n 1)
+[ "$unique_translation_total" -eq "$distinct_source_total" ] || die 'duplicate committed translation identities were observed'
 "${compose[@]}" exec -T web test -s "/data/out/$job_id/chaos-sample.docx" \
     || die 'translated output artifact is missing or empty'
 

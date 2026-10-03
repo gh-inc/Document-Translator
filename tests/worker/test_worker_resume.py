@@ -28,9 +28,11 @@ from app.core.models import (
     ChunkStatus,
     JobRecord,
     JobStatus,
+    TranslationPlan,
+    TriageStatus,
 )
+from app.core.services.cache_keys import translation_key
 from app.worker.claim_loop import ClaimLoop
-from app.worker.keys import translation_key
 
 
 class StopAfterCheckpointProvider(FakeProvider):
@@ -190,8 +192,24 @@ async def test_restart_skips_every_translation_committed_before_cancellation(
         committed_block_id = first_provider.requested_block_ids[0]
         async with first_persistence.read():
             committed_translation = await cache_repo.get_block_translation(
-                translation_key(job),
-                committed_block_id,
+                translation_key(
+                    job.target_language,
+                    job.model,
+                    job.prompt_version,
+                    job.glossary,
+                    TranslationPlan(
+                        source_language="und",
+                        domain="general",
+                        register="neutral",
+                        warnings=["Document analysis was unavailable; using the degraded plan."],
+                        triage_status=TriageStatus.DEGRADED,
+                    ),
+                ),
+                next(
+                    block.source_hash
+                    for block in document_ir.blocks
+                    if block.id == committed_block_id
+                ),
             )
             claimed_job = await first_job_repo.get_job(job.id)
         assert committed_translation is not None

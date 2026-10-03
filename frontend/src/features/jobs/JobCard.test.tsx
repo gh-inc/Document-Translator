@@ -11,7 +11,7 @@ import BatchPage from './BatchPage';
 
 vi.mock('../../api/client', async (original) => ({ ...await original<typeof import('../../api/client')>(), api: { getJob: vi.fn(), retryJob: vi.fn(), download: vi.fn(), getDocument: vi.fn(), getBatch: vi.fn() } }));
 
-const job: JobSummaryResponse = { id: 'job-1', document_id: 'doc-1', batch_id: 'batch-1', target_language: 'de', status: 'queued', total_chunks: 4, done_chunks: 0, cost_usd: 0, error: null };
+const job: JobSummaryResponse = { id: 'job-1', document_id: 'doc-1', batch_id: 'batch-1', target_language: 'de', status: 'queued', total_chunks: 4, done_chunks: 0, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0, error: null };
 class Events {
   static all: Events[] = [];
   static maxLive = 0;
@@ -121,14 +121,23 @@ describe('job progress', () => {
     expect(await screen.findByText('Queued')).toBeInTheDocument();
     act(() => currentSource().emit('status', { status: 'running' }));
     expect(screen.getByText('Translating')).toBeInTheDocument();
-    act(() => currentSource().emit('progress', { status: 'running', done_chunks: 2, cost_usd: 0.1234 }));
+    act(() => currentSource().emit('progress', { status: 'running', done_chunks: 2, cache_hit_blocks: 4, cache_miss_blocks: 1, cost_usd: 0.1234 }));
     expect(screen.getByText('2 / 4 chunks')).toBeInTheDocument();
     expect(screen.getByText('$0.1234')).toBeInTheDocument();
+    expect(screen.getByText('80% cached')).toBeInTheDocument();
+    expect(screen.getByLabelText('4 of 5 blocks served from the translation cache')).toBeInTheDocument();
     act(() => currentSource().emit('status', { status: 'assembling', done_chunks: 4 }));
     expect(screen.getByText('Preparing document')).toBeInTheDocument();
     act(() => currentSource().emit('done', { status: 'done', done_chunks: 4 }));
     expect(screen.getByRole('button', { name: 'Download translation' })).toBeInTheDocument();
     expect(Events.all.every(e => e.closed)).toBe(true);
+  });
+
+  it('hides the cache percentage before any block lookup', async () => {
+    render(<JobCard jobId={job.id} />);
+    await screen.findByText('Queued');
+    expect(screen.queryByText(/% cached/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN%/)).not.toBeInTheDocument();
   });
 
   it('keeps at most one live connection in StrictMode and closes on unmount', async () => {

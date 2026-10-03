@@ -30,6 +30,7 @@ from app.core.ports import (
     JobExecutionRepository,
     TranslationCacheRepository,
 )
+from app.core.services.cache_keys import translation_key
 
 _CHUNK_TOKEN_BUDGET = 1_000
 _PROMPT_VERSION = "v1"
@@ -262,11 +263,25 @@ class JobService:
             return None
         if job.status not in {JobStatus.FAILED, JobStatus.COMPLETED_WITH_ERRORS}:
             raise self._error(ErrorCode.CONFLICT, 409)
+        async with self._persistence.read():
+            analysis = await self._document_repo.get_analysis(job.document_id)
+        if analysis is None:
+            raise self._error(ErrorCode.INTERNAL_ERROR, 500)
+        plan = TranslationPlan(
+            source_language=analysis.source_language,
+            domain=analysis.domain,
+            register=analysis.register,
+            terms=analysis.terms,
+            warnings=analysis.warnings,
+            triage_status=analysis.triage_status,
+        )
         try:
             async with self._persistence.write():
                 updated = await self._persistence.retry_job(
                     job_id,
-                    translation_key=self._translation_key(job),
+                    translation_key=translation_key(
+                        job.target_language, job.model, job.prompt_version, job.glossary, plan
+                    ),
                     raised_cost_cap_usd=raised_cost_cap_usd,
                     default_cost_cap_usd=self._settings.max_cost_per_job_usd,
                     default_max_attempts=self._settings.max_chunk_attempts,
@@ -356,19 +371,6 @@ class JobService:
         request_digest = cls._digest(request_key)
         language_digest = cls._digest(f"{request_key}\0{language}")
         return f"{request_digest}.{language_digest}"
-
-    @classmethod
-    def _translation_key(cls, job: JobRecord) -> str:
-        glossary_hash = cls._digest(
-            json.dumps(job.glossary, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-        )
-        return cls._digest(
-            json.dumps(
-                [job.target_language, job.model, job.prompt_version, glossary_hash],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        )
 
     @staticmethod
     def _error(code: ErrorCode, status_code: int) -> ServiceError:

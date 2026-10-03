@@ -20,6 +20,8 @@ export default function JobCard({ jobId, initialJob, live = true, showDetailsLin
   const { job, loading, error, reconnecting, reload } = useJobEvents(jobId, initialJob, live);
   const [action, setAction] = useState<'retry' | 'download' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const cachedTotal = job ? job.cache_hit_blocks + job.cache_miss_blocks : 0;
+  const cachedPercent = job && cachedTotal > 0 ? Math.round(100 * job.cache_hit_blocks / cachedTotal) : null;
   const lifetime = useRef<AbortController>();
   useEffect(() => {
     if (job) onJobUpdate?.(job);
@@ -79,6 +81,7 @@ export default function JobCard({ jobId, initialJob, live = true, showDetailsLin
         <h2 className="text-xl font-semibold">{job.target_language}</h2>
         <p aria-live="polite" className="mt-3">{statuses[job.status]}</p>
         <p className="mt-2">{job.done_chunks} / {job.total_chunks} chunks</p>
+        {cachedPercent !== null && <p className="mt-2" aria-label={`${job.cache_hit_blocks} of ${cachedTotal} blocks served from the translation cache`}>{cachedPercent}% cached</p>}
         <progress className="mt-2 w-full accent-stark-red" aria-label={`Translation progress for ${job.target_language}`} value={job.done_chunks} max={Math.max(job.total_chunks, 1)} />
         <p className="mt-2">Cost: <span>${job.cost_usd.toFixed(4)}</span></p>
         {job.status === 'completed_with_errors' && <p role="status" className="mt-4 text-amber-300">Untranslated blocks remain in the source language. Retry to translate the remaining blocks.</p>}

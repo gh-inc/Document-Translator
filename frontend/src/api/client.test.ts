@@ -3,7 +3,7 @@ import { api, parseServerSentEvent } from './client';
 import { ApiError, getErrorMessage, isAbortError } from './errors';
 
 const documentResponse = { id: 'doc', filename: 'report.pdf', format: 'pdf', status: 'analyzing', block_count: 4 };
-const job = { id: 'job', document_id: 'doc', batch_id: 'batch', target_language: 'de', status: 'running', total_chunks: 4, done_chunks: 1, cost_usd: 0.01, error: null };
+const job = { id: 'job', document_id: 'doc', batch_id: 'batch', target_language: 'de', status: 'running', total_chunks: 4, done_chunks: 1, cache_hit_blocks: 3, cache_miss_blocks: 1, cost_usd: 0.01, error: null };
 const batch = { batch_id: 'batch', jobs: [job] };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -73,7 +73,7 @@ describe('API client', () => {
     await expect(api.getJob('job')).rejects.toMatchObject({ error_code: 'internal_error', message: 'Internal server error' });
   });
 
-  it.each([null, {}, { ...job, status: 'mystery' }, { ...job, status: { toString: 'private' } }, { ...job, done_chunks: '1' }, { ...job, error: { error_code: 'scanned_pdf' } }])('rejects malformed successful job payloads', async (payload) => {
+  it.each([null, {}, { ...job, status: 'mystery' }, { ...job, status: { toString: 'private' } }, { ...job, done_chunks: '1' }, { ...job, cache_hit_blocks: '12' }, { ...job, cache_miss_blocks: -1 }, { ...job, cache_hit_blocks: Number.MAX_SAFE_INTEGER + 1 }, { ...job, error: { error_code: 'scanned_pdf' } }])('rejects malformed successful job payloads', async (payload) => {
     vi.stubGlobal('fetch', async () => json(payload));
     await expect(api.getJob('job')).rejects.toMatchObject({ error_code: 'internal_error', kind: 'invalid_response' });
   });
@@ -132,10 +132,12 @@ describe('API client', () => {
   });
 
   it('validates SSE JSON and sanitizes its errors', () => {
-    const event = { job_id: 'job', event: 'progress', status: 'running', done_chunks: 1, total_chunks: 4, cost_usd: 0.01, error: null };
+    const event = { job_id: 'job', event: 'progress', status: 'running', done_chunks: 1, total_chunks: 4, cache_hit_blocks: 3, cache_miss_blocks: 1, cost_usd: 0.01, error: null };
     expect(parseServerSentEvent(JSON.stringify(event))).toEqual(event);
     expect(parseServerSentEvent('raw exception')).toBeNull();
     expect(parseServerSentEvent(JSON.stringify({ ...event, status: 'unknown' }))).toBeNull();
+    expect(parseServerSentEvent(JSON.stringify({ ...event, cache_hit_blocks: '3' }))).toBeNull();
+    expect(parseServerSentEvent(JSON.stringify({ ...event, cache_miss_blocks: -1 }))).toBeNull();
     expect(parseServerSentEvent(JSON.stringify({ ...event, error: { error_code: 'unknown', message: 'private', retryable: true } }))?.error?.message).toBe('Internal server error');
   });
 

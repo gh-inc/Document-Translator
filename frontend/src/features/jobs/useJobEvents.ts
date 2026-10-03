@@ -94,7 +94,7 @@ export function useJobEvents(jobId: string, initialJob?: JobSummaryResponse, liv
           const payload = parseServerSentEvent(event.data);
           if (!payload || payload.job_id !== jobId || payload.event !== name || !latest) return;
           eventRevision++;
-          update({ ...latest, status: payload.status, done_chunks: payload.done_chunks, total_chunks: payload.total_chunks, cost_usd: payload.cost_usd, error: payload.error });
+          update({ ...latest, status: payload.status, done_chunks: payload.done_chunks, total_chunks: payload.total_chunks, cache_hit_blocks: payload.cache_hit_blocks, cache_miss_blocks: payload.cache_miss_blocks, cost_usd: payload.cost_usd, error: payload.error });
         });
       }
     };

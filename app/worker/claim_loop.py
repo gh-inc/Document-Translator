@@ -141,7 +141,7 @@ class ClaimLoop:
                 persistence=self._persistence,
             )
             try:
-                await self._race_heartbeat(assembly.render(job), heartbeat_task)
+                await self._race_heartbeat(assembly.render(job, plan), heartbeat_task)
             except LeaseLostError:
                 raise
             except asyncio.CancelledError:

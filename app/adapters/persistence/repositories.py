@@ -380,9 +380,10 @@ class SqliteJobExecutionRepository:
         async with self._connection.execute(
             "INSERT INTO jobs "
             "(id, document_id, batch_id, target_language, status, total_chunks, done_chunks, "
-            "model, prompt_version, glossary, tokens_in, tokens_out, cost_usd, error_code, "
+            "cache_hit_blocks, cache_miss_blocks, model, prompt_version, glossary, "
+            "tokens_in, tokens_out, cost_usd, error_code, "
             "error_detail, idempotency_key, lease_owner, lease_expires_at, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job.id,
                 job.document_id,
@@ -391,6 +392,8 @@ class SqliteJobExecutionRepository:
                 job.status.value,
                 job.total_chunks,
                 job.done_chunks,
+                job.cache_hit_blocks,
+                job.cache_miss_blocks,
                 job.model,
                 job.prompt_version,
                 _json(job.glossary),
@@ -476,6 +479,19 @@ class SqliteJobExecutionRepository:
             "updated_at = ? WHERE id = ? AND status IN ('running', 'assembling') "
             "AND (? IS NULL OR (lease_owner = ? AND lease_expires_at > ?))",
             (done_chunks, now, job_id, self._worker_id, self._worker_id, now),
+        ):
+            pass
+
+    async def record_job_cache_counts(self, job_id: str, *, hits: int, misses: int) -> None:
+        require_transaction(self._connection)
+        if hits < 0 or misses < 0:
+            raise ValueError("cache counters cannot be negative")
+        if not hits and not misses:
+            return
+        async with self._connection.execute(
+            "UPDATE jobs SET cache_hit_blocks = cache_hit_blocks + ?, "
+            "cache_miss_blocks = cache_miss_blocks + ? WHERE id = ?",
+            (hits, misses, job_id),
         ):
             pass
 
@@ -687,34 +703,34 @@ class SqliteTranslationCacheRepository:
     async def get_block_translation(
         self,
         translation_key: str,
-        block_id: str,
+        source_hash: str,
     ) -> str | None:
         row = await _fetch_one(
             self._connection,
             "SELECT translated_text FROM block_translations "
-            "WHERE translation_key = ? AND block_id = ?",
-            (translation_key, block_id),
+            "WHERE translation_key = ? AND source_hash = ?",
+            (translation_key, source_hash),
         )
         return None if row is None else str(row["translated_text"])
 
     async def save_block_translation(
         self,
         translation_key: str,
-        block_id: str,
+        source_hash: str,
         translated_text: str,
     ) -> None:
         require_transaction(self._connection)
         async with self._connection.execute(
             "INSERT OR IGNORE INTO block_translations "
-            "(translation_key, block_id, translated_text, created_at) VALUES (?, ?, ?, ?)",
+            "(translation_key, source_hash, translated_text, created_at) VALUES (?, ?, ?, ?)",
             (
                 translation_key,
-                block_id,
+                source_hash,
                 translated_text,
                 _timestamp(datetime.now(UTC)),
             ),
         ):
             pass
-        existing = await self.get_block_translation(translation_key, block_id)
+        existing = await self.get_block_translation(translation_key, source_hash)
         if existing is None:
             raise RuntimeError("translation insert/read-back returned no row")

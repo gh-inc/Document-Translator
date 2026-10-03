@@ -173,6 +173,11 @@ class ApiPersistence:
             "SELECT COUNT(*) FROM chunk_attempts WHERE outcome != 'ok'"
         ) as cursor:
             errors_row = await cursor.fetchone()
+        async with self._connection.execute(
+            "SELECT COALESCE(SUM(cache_hit_blocks), 0), "
+            "COALESCE(SUM(cache_miss_blocks), 0) FROM jobs"
+        ) as cursor:
+            cache_row = await cursor.fetchone()
         return {
             "jobs_by_status": {str(row["status"]): int(row["count"]) for row in status_rows},
             "llm_cost_usd_total": 0.0 if cost_row is None else float(cost_row[0]),
@@ -182,8 +187,8 @@ class ApiPersistence:
                 "output": 0 if triage_row is None else int(triage_row[2]),
             },
             "llm_errors_total": 0 if errors_row is None else int(errors_row[0]),
-            # Cache hits are intentionally not persisted by the approved schema.
-            "cache_hits_total": 0,
+            "cache_hits_total": 0 if cache_row is None else int(cache_row[0]),
+            "cache_misses_total": 0 if cache_row is None else int(cache_row[1]),
         }
 
     async def retry_job(
@@ -258,9 +263,11 @@ class ApiPersistence:
             chunk_id = str(chunk["id"])
             async with self._connection.execute(
                 "SELECT links.block_id FROM chunk_blocks AS links "
+                "JOIN blocks AS source ON source.id = links.block_id "
                 "LEFT JOIN block_translations AS translations "
-                "ON translations.translation_key = ? AND translations.block_id = links.block_id "
-                "WHERE links.chunk_id = ? AND translations.block_id IS NULL",
+                "ON translations.translation_key = ? "
+                "AND translations.source_hash = source.source_hash "
+                "WHERE links.chunk_id = ? AND translations.source_hash IS NULL",
                 (translation_key, chunk_id),
             ) as cursor:
                 missing = await cursor.fetchone()

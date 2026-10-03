@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     total_chunks INTEGER NOT NULL DEFAULT 0,
     done_chunks INTEGER NOT NULL DEFAULT 0,
+    cache_hit_blocks INTEGER NOT NULL DEFAULT 0,
+    cache_miss_blocks INTEGER NOT NULL DEFAULT 0,
     model TEXT NOT NULL,
     prompt_version TEXT NOT NULL,
     glossary TEXT NOT NULL DEFAULT '{}',
@@ -104,14 +106,14 @@ CREATE INDEX IF NOT EXISTS idx_chunk_blocks_block_id ON chunk_blocks(block_id);
 
 CREATE TABLE IF NOT EXISTS block_translations (
     translation_key TEXT NOT NULL,
-    block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    source_hash TEXT NOT NULL,
     translated_text TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (translation_key, block_id)
+    PRIMARY KEY (translation_key, source_hash)
 );
 
--- Cache lookup by key + block.
-CREATE INDEX IF NOT EXISTS idx_block_translations_lookup ON block_translations(translation_key, block_id);
+-- Cache lookup by semantic key + source text hash. The primary key also covers this read.
+CREATE INDEX IF NOT EXISTS idx_block_translations_lookup ON block_translations(translation_key, source_hash);
 
 CREATE TABLE IF NOT EXISTS chunk_attempts (
     id TEXT PRIMARY KEY,

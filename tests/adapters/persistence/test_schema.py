@@ -72,8 +72,8 @@ def _seed_unique_constraint_rows(con: sqlite3.Connection) -> None:
         [("chunk-1", 1), ("chunk-2", 2)],
     )
     con.execute(
-        "INSERT INTO block_translations (translation_key, block_id, translated_text) "
-        "VALUES ('translation-key', 'block-1', 'Hallo')"
+        "INSERT INTO block_translations (translation_key, source_hash, translated_text) "
+        "VALUES ('translation-key', 'hash', 'Hallo')"
     )
 
 
@@ -128,13 +128,30 @@ def test_blocks_table_has_expected_columns(connection: sqlite3.Connection) -> No
     )
 
 
+def test_translation_cache_is_addressed_by_source_hash(
+    connection: sqlite3.Connection,
+) -> None:
+    _load_schema(connection)
+    columns = list(connection.execute("PRAGMA table_info(block_translations)"))
+    assert tuple(str(row[1]) for row in columns) == (
+        "translation_key",
+        "source_hash",
+        "translated_text",
+        "created_at",
+    )
+    assert tuple(str(row[1]) for row in sorted(columns, key=lambda row: row[5]) if row[5]) == (
+        "translation_key",
+        "source_hash",
+    )
+
+
 @pytest.mark.parametrize(
     ("index_name", "expected_columns"),
     [
         ("idx_jobs_claim", ("status", "lease_expires_at")),
         ("idx_chunks_claim", ("job_id", "status", "lease_expires_at")),
         ("idx_chunks_expired", ("status", "lease_expires_at")),
-        ("idx_block_translations_lookup", ("translation_key", "block_id")),
+        ("idx_block_translations_lookup", ("translation_key", "source_hash")),
     ],
 )
 def test_claim_loop_indexes_exist_in_column_order(
@@ -180,8 +197,8 @@ def test_claim_loop_indexes_exist_in_column_order(
         ),
         (
             None,
-            "INSERT INTO block_translations (translation_key, block_id, translated_text) "
-            "VALUES ('translation-key', 'block-1', 'Hallo again')",
+            "INSERT INTO block_translations (translation_key, source_hash, translated_text) "
+            "VALUES ('translation-key', 'hash', 'Hallo again')",
         ),
         (
             None,
@@ -195,7 +212,7 @@ def test_claim_loop_indexes_exist_in_column_order(
         "chunk-job-seq",
         "chunk-block-key",
         "chunk-block-seq",
-        "translation-cache-key-block",
+        "translation-cache-key-source-hash",
         "job-idempotency-key",
     ),
 )
@@ -250,8 +267,8 @@ def test_schema_constraints_cascade_and_invalid_join_rollback(
         "VALUES ('attempt-1', 'chunk-1', 1, 'ok')"
     )
     connection.execute(
-        "INSERT INTO block_translations (translation_key, block_id, translated_text) "
-        "VALUES ('key', 'block-1', 'Hallo')"
+        "INSERT INTO block_translations (translation_key, source_hash, translated_text) "
+        "VALUES ('key', 'hash-1', 'Hallo')"
     )
     connection.commit()
 
@@ -291,7 +308,8 @@ def test_schema_constraints_cascade_and_invalid_join_rollback(
         "jobs",
         "chunks",
         "chunk_blocks",
-        "block_translations",
         "chunk_attempts",
     ):
         assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
+    # Translation memory is content-addressed and outlives source documents.
+    assert connection.execute("SELECT COUNT(*) FROM block_translations").fetchone() == (1,)

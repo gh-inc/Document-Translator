@@ -32,6 +32,7 @@ async def test_missing_jobs_empty_list_and_nonterminal_download(
     assert isinstance(status, JobSummary)
     assert status.status is JobStatus.QUEUED
     assert status.done_chunks == 0 and status.total_chunks > 0 and status.cost_usd == 0
+    assert (status.cache_hit_blocks, status.cache_miss_blocks) == (0, 0)
     blocked = await tools.download_result(status.id, "output")
     assert isinstance(blocked, ToolError) and blocked.error_code is ErrorCode.CONFLICT
     assert len(await tools.list_recent_jobs(1)) == 1
@@ -217,11 +218,19 @@ async def test_stored_unknown_error_never_leaks_diagnostics(
     from app.core.services.job_service import JobService
 
     async def get_job(_self: JobService, _job_id: str):
-        return job.model_copy(update={"error_code": "secret raw code", "error_detail": "private"})
+        return job.model_copy(
+            update={
+                "error_code": "secret raw code",
+                "error_detail": "private",
+                "cache_hit_blocks": 12,
+                "cache_miss_blocks": 3,
+            }
+        )
 
     monkeypatch.setattr(JobService, "get_job", get_job)
     status = await tools.check_status(job.id)
     assert isinstance(status, JobSummary)
+    assert (status.cache_hit_blocks, status.cache_miss_blocks) == (12, 3)
     assert status.error is not None and status.error.error_code is ErrorCode.INTERNAL_ERROR
     assert "private" not in status.model_dump_json()
     assert "secret" not in status.model_dump_json()

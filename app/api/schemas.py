@@ -28,6 +28,8 @@ class JobSummaryResponse(BaseModel):
     status: JobStatus
     total_chunks: int
     done_chunks: int
+    cache_hit_blocks: int = Field(default=0, ge=0)
+    cache_miss_blocks: int = Field(default=0, ge=0)
     cost_usd: float
     error: JobError | None
 
@@ -47,6 +49,8 @@ class ServerSentEvent(BaseModel):
     status: JobStatus
     done_chunks: int
     total_chunks: int
+    cache_hit_blocks: int = Field(default=0, ge=0)
+    cache_miss_blocks: int = Field(default=0, ge=0)
     cost_usd: float
     error: JobError | None
 

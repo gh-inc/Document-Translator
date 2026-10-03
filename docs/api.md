@@ -134,8 +134,9 @@ never include exception details or persisted diagnostic text.
   usage is overwritten on re-triage; cumulative usage survives degraded
   delete-and-republish. Historical rows migrate with zeros; old triage expense
   and unknown or uncheckpointed provider usage cannot be reconstructed.
-  `cache_hits_total` is initialized to zero; durable cache-hit instrumentation
-  is deferred because the approved schema has no cache-hit record.
+  `cache_hits_total` and `cache_misses_total` sum persisted per-job lookup counts.
+  Job summaries, SSE progress and MCP expose `cache_hit_blocks` and
+  `cache_miss_blocks` as default-zero integers; retries can add observations.
 
 Use `make test`, `make lint` and `make typecheck` for offline verification.
 API tests run against temporary file-backed SQLite databases with real WAL,

@@ -72,3 +72,22 @@ docker compose --project-name <printed-project-name> --file docker-compose.yml d
 The chaos run chooses unused host ports and overrides the default lease with a
 shorter lease to keep the verification practical. Production compose uses the
 configured `CHUNK_LEASE_SECONDS` (60 seconds by default).
+
+## Translation cache accounting
+
+The UI cached percentage and `/metrics` counters `cache_hits_total` and
+`cache_misses_total` read the same durable job columns, `cache_hit_blocks` and
+`cache_miss_blocks`. The unit is block lookups, separate from chunk progress;
+percentage is hits / (hits + misses), hidden before any lookup. Window hit rate
+is the corresponding ratio of deltas between scrapes. Retry/re-delivery can
+count another lookup; a crash before the counter transaction omits that lookup.
+Repeated scrapes do not add counts. No source text is a metric label.
+
+Cache identity covers target language, model, prompt version, glossary and the
+entire analysis plan, then exact source text via SHA-256. Neighbouring context
+is excluded. A deploy from the legacy block-ID cache drops those cache rows;
+jobs and attempt accounting remain. Previously done chunks retain their status,
+so an in-flight job can finish as `completed_with_errors`, retaining source text
+for those missing translations. Use the normal Retry action to requeue these
+cache misses and retranslate them after the upgrade. Existing completed output
+files remain available.

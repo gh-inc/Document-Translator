@@ -117,6 +117,79 @@ async def test_factory_migrates_legacy_analysis_rows_and_serializes_startup(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_index", [False, True])
+async def test_factory_migrates_legacy_cache_and_job_counters(
+    tmp_path: Path, legacy_index: bool
+) -> None:
+    db_path = tmp_path / "legacy-cache.db"
+    with sqlite3.connect(db_path) as legacy:
+        legacy.executescript(
+            """
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL, batch_id TEXT NOT NULL,
+                target_language TEXT NOT NULL, status TEXT NOT NULL,
+                total_chunks INTEGER NOT NULL DEFAULT 0,
+                done_chunks INTEGER NOT NULL DEFAULT 0, model TEXT NOT NULL,
+                prompt_version TEXT NOT NULL, glossary TEXT NOT NULL DEFAULT '{}',
+                tokens_in INTEGER NOT NULL DEFAULT 0,
+                tokens_out INTEGER NOT NULL DEFAULT 0,
+                cost_usd REAL NOT NULL DEFAULT 0.0, error_code TEXT,
+                error_detail TEXT, idempotency_key TEXT NOT NULL UNIQUE,
+                lease_owner TEXT, lease_expires_at DATETIME,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO jobs (id, document_id, batch_id, target_language,
+                status, model, prompt_version, idempotency_key)
+            VALUES ('job-old', 'doc-old', 'batch-old', 'de', 'done', 'model', 'v1', 'idem');
+            CREATE TABLE block_translations (
+                translation_key TEXT NOT NULL, block_id TEXT NOT NULL,
+                translated_text TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (translation_key, block_id)
+            );
+            INSERT INTO block_translations (translation_key, block_id, translated_text)
+            VALUES ('legacy-key', 'old-block', 'Hallo');
+            """
+        )
+        if legacy_index:
+            legacy.execute(
+                "CREATE INDEX idx_block_translations_lookup "
+                "ON block_translations(translation_key, block_id)"
+            )
+    legacy.close()
+
+    connections = await asyncio.gather(
+        SqliteConnectionFactory(db_path).create(),
+        SqliteConnectionFactory(db_path).create(),
+    )
+    try:
+        for connection in connections:
+            async with connection.execute("PRAGMA table_info(block_translations)") as cursor:
+                cache_columns = {str(row[1]) for row in await cursor.fetchall()}
+            assert "source_hash" in cache_columns
+            assert "block_id" not in cache_columns
+            assert await _scalar(connection, "SELECT COUNT(*) FROM block_translations") == 0
+            async with connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='block_translations' AND name NOT LIKE 'sqlite_autoindex_%'"
+            ) as cursor:
+                indexes = {str(row[0]) for row in await cursor.fetchall()}
+            assert indexes == {"idx_block_translations_lookup"}
+            async with connection.execute("PRAGMA table_info(jobs)") as cursor:
+                job_columns = {str(row[1]): row[4] for row in await cursor.fetchall()}
+            assert job_columns["cache_hit_blocks"] == "0"
+            assert job_columns["cache_miss_blocks"] == "0"
+            async with connection.execute(
+                "SELECT cache_hit_blocks, cache_miss_blocks FROM jobs WHERE id = 'job-old'"
+            ) as cursor:
+                row = await cursor.fetchone()
+            assert tuple(row) == (0, 0)
+    finally:
+        await asyncio.gather(*(connection.close() for connection in connections))
+
+
+@pytest.mark.asyncio
 async def test_migrated_factory_open_does_not_wait_for_unrelated_writer(
     tmp_path: Path,
 ) -> None:

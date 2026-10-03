@@ -158,7 +158,7 @@ async def _translate_markdown(
         linked_ids = [str(row[0]) for row in await cursor.fetchall()]
     async with connection.execute(
         "SELECT blocks.id FROM blocks "
-        "JOIN block_translations ON block_translations.block_id = blocks.id "
+        "JOIN block_translations ON block_translations.source_hash = blocks.source_hash "
         "WHERE blocks.document_id = ? ORDER BY blocks.seq",
         (document_id,),
     ) as cursor:
@@ -171,7 +171,7 @@ async def _translate_markdown(
     return completed, linked_ids, set(cached_ids), all_ids
 
 
-async def test_markdown_empty_cells_never_link_or_cache_and_cost_stays_constant(
+async def test_markdown_empty_cells_never_link_or_cache_and_repeated_text_is_reused(
     pipeline_context,
     tmp_path: Path,
 ) -> None:
@@ -201,11 +201,12 @@ async def test_markdown_empty_cells_never_link_or_cache_and_cost_stays_constant(
     assert set(merged_links) == set(merged_cache)
     assert len(merged_links) == 3
     assert len(merged_ids) - len(merged_links) == 2
-    assert len(provider.requests) == 2
-    assert all(len(request.blocks) == 3 for request in provider.requests)
-    assert baseline.tokens_in == merged.tokens_in
-    assert baseline.tokens_out == merged.tokens_out
-    assert baseline.cost_usd == merged.cost_usd
+    assert len(provider.requests) == 1
+    assert len(provider.requests[0].blocks) == 3
+    assert baseline.tokens_in > 0 and merged.tokens_in == 0
+    assert baseline.tokens_out > 0 and merged.tokens_out == 0
+    assert baseline.cost_usd > 0 and merged.cost_usd == 0
+    assert (merged.cache_hit_blocks, merged.cache_miss_blocks) == (3, 0)
 
 
 async def test_markdown_document_with_only_empty_cells_has_zero_chunks_and_completes(
@@ -231,3 +232,4 @@ async def test_markdown_document_with_only_empty_cells_has_zero_chunks_and_compl
     assert provider.requests == []
     assert completed.tokens_in == completed.tokens_out == 0
     assert completed.cost_usd == 0
+    assert (completed.cache_hit_blocks, completed.cache_miss_blocks) == (0, 0)

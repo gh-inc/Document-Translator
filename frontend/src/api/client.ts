@@ -18,10 +18,11 @@ const parseDocument: Parser<DocumentUploadResponse> = (value) => {
 
 function parseProgress(value: RecordValue) {
   if (!text(value.status) || !jobStatuses.includes(value.status) || !count(value.total_chunks)
-    || !count(value.done_chunks) || !money(value.cost_usd)) return null;
+    || !count(value.done_chunks) || !count(value.cache_hit_blocks)
+    || !count(value.cache_miss_blocks) || !money(value.cost_usd)) return null;
   const error = value.error === null ? null : parseErrorResponse(value.error);
   if (value.error !== null && error === null) return null;
-  return { status: value.status as JobSummaryResponse['status'], total_chunks: value.total_chunks, done_chunks: value.done_chunks, cost_usd: value.cost_usd, error };
+  return { status: value.status as JobSummaryResponse['status'], total_chunks: value.total_chunks, done_chunks: value.done_chunks, cache_hit_blocks: value.cache_hit_blocks, cache_miss_blocks: value.cache_miss_blocks, cost_usd: value.cost_usd, error };
 }
 
 const parseJob: Parser<JobSummaryResponse> = (value) => {

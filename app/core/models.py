@@ -185,6 +185,8 @@ class JobRecord(BaseModel):
     status: JobStatus
     total_chunks: int
     done_chunks: int
+    cache_hit_blocks: int = 0
+    cache_miss_blocks: int = 0
     model: str
     prompt_version: str
     glossary: dict[str, str] = Field(default_factory=dict)
@@ -233,7 +235,7 @@ class BlockTranslationRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     translation_key: str
-    block_id: str
+    source_hash: str
     translated_text: str
     created_at: datetime
 

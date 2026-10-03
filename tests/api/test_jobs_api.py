@@ -202,6 +202,8 @@ async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:
         "status",
         "total_chunks",
         "done_chunks",
+        "cache_hit_blocks",
+        "cache_miss_blocks",
         "cost_usd",
         "error",
     }
@@ -220,6 +222,63 @@ async def test_recent_jobs_invalid_limit_uses_error_catalog(api_runtime) -> None
         "message": "Request validation failed",
         "retryable": False,
     }
+
+
+async def test_cache_counts_are_shared_by_rest_sse_and_durable_metrics(api_runtime) -> None:
+    _, settings, client = api_runtime
+    document_id = await _upload(client, "sample_en.docx")
+    completed: list[dict] = []
+    for index in range(2):
+        created = await client.post(
+            "/api/jobs",
+            json={
+                "document_id": document_id,
+                "target_languages": ["de"],
+                "idempotency_key": f"cache-observation-{index}",
+            },
+        )
+        assert created.status_code == 200
+        queued = created.json()["jobs"][0]
+        assert (queued["cache_hit_blocks"], queued["cache_miss_blocks"]) == (0, 0)
+        completed.append(await _run_fake_worker(settings, queued["id"], client))
+
+    assert completed[0]["cache_miss_blocks"] > 0
+    assert completed[1]["cache_hit_blocks"] > 0
+    for job in completed:
+        event_response = await client.get(f"/api/jobs/{job['id']}/events")
+        data_line = next(
+            line[6:] for line in event_response.text.splitlines() if line.startswith("data: ")
+        )
+        event = json.loads(data_line)
+        assert (event["cache_hit_blocks"], event["cache_miss_blocks"]) == (
+            job["cache_hit_blocks"],
+            job["cache_miss_blocks"],
+        )
+
+    expected = {
+        "cache_hits_total": sum(job["cache_hit_blocks"] for job in completed),
+        "cache_misses_total": sum(job["cache_miss_blocks"] for job in completed),
+    }
+
+    def reported_counts(body: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for name in expected:
+            value = next(
+                line.split()[-1] for line in body.splitlines() if line.startswith(f"{name} ")
+            )
+            counts[name] = int(float(value))
+        return counts
+
+    assert reported_counts((await client.get("/metrics")).text) == expected
+    assert reported_counts((await client.get("/metrics")).text) == expected
+    restarted = create_app(settings)
+    async with (
+        restarted.router.lifespan_context(restarted),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=restarted), base_url="http://test"
+        ) as restarted_client,
+    ):
+        assert reported_counts((await restarted_client.get("/metrics")).text) == expected
 
 
 @pytest.mark.parametrize(
@@ -265,6 +324,8 @@ async def test_fake_worker_terminal_sse_and_download(
     assert "event: done" in events.text
     data_line = next(line[6:] for line in events.text.splitlines() if line.startswith("data: "))
     assert json.loads(data_line)["status"] == "done"
+    assert json.loads(data_line)["cache_hit_blocks"] == terminal["cache_hit_blocks"]
+    assert json.loads(data_line)["cache_miss_blocks"] == terminal["cache_miss_blocks"]
 
     download = await client.get(f"/api/jobs/{job_id}/download")
     assert download.status_code == 200
@@ -367,7 +428,13 @@ async def test_readiness_metrics_and_safe_internal_errors(api_runtime, monkeypat
     first_metrics = await client.get("/metrics")
     second_metrics = await client.get("/metrics")
     assert first_metrics.status_code == second_metrics.status_code == 200
-    for metric in ("jobs_by_status", "llm_cost_usd_total", "llm_errors_total", "cache_hits_total"):
+    for metric in (
+        "jobs_by_status",
+        "llm_cost_usd_total",
+        "llm_errors_total",
+        "cache_hits_total",
+        "cache_misses_total",
+    ):
         first_value = [line for line in first_metrics.text.splitlines() if line.startswith(metric)]
         second_value = [
             line for line in second_metrics.text.splitlines() if line.startswith(metric)

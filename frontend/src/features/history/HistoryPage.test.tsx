@@ -10,7 +10,7 @@ import HistoryPage from './HistoryPage';
 
 vi.mock('../../api/client', () => ({ api: { listRecentJobs: vi.fn(), getJob: vi.fn(), retryJob: vi.fn(), download: vi.fn(), getDocument: vi.fn() } }));
 
-const completed: JobSummaryResponse = { id: 'job-done', document_id: 'doc', batch_id: 'batch/1', target_language: 'German', status: 'done', total_chunks: 4, done_chunks: 4, cost_usd: 0.0123, error: null };
+const completed: JobSummaryResponse = { id: 'job-done', document_id: 'doc', batch_id: 'batch/1', target_language: 'German', status: 'done', total_chunks: 4, done_chunks: 4, cache_hit_blocks: 0, cache_miss_blocks: 0, cost_usd: 0.0123, error: null };
 const failed: JobSummaryResponse = { ...completed, id: 'job-failed', target_language: 'Swedish', status: 'failed', done_chunks: 2, error: { error_code: 'provider_timeout', message: 'unsafe server message', retryable: true } };
 
 function renderPage() { return render(<MemoryRouter><HistoryPage /></MemoryRouter>); }

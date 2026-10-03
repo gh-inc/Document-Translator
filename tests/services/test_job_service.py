@@ -34,6 +34,7 @@ from app.core.models import (
     TranslationPlan,
 )
 from app.core.ports import CostCalculator
+from app.core.services.cache_keys import translation_key
 from app.core.services.job_service import JobService
 from app.worker.translation_loop import TranslationLoop
 
@@ -349,11 +350,21 @@ async def test_retry_preserves_history_and_restores_cap_after_database_restart(
     ) as cursor:
         chunk_rows = await cursor.fetchall()
     first_chunk_id, failed_chunk_id = (str(row[0]) for row in chunk_rows)
-    key = service._translation_key(job)
+    plan = TranslationPlan(
+        source_language="en",
+        domain="business",
+        register="neutral",
+        terms=["Document Translator"],
+    )
+    key = translation_key(job.target_language, job.model, job.prompt_version, job.glossary, plan)
 
     async with transaction(connection):
-        await cache_repo.save_block_translation(key, blocks[0].id, "cached translated paragraph")
-        await cache_repo.save_block_translation(key, blocks[1].id, "another cached paragraph")
+        await cache_repo.save_block_translation(
+            key, blocks[0].source_hash, "cached translated paragraph"
+        )
+        await cache_repo.save_block_translation(
+            key, blocks[1].source_hash, "another cached paragraph"
+        )
         for attempt_no in range(1, 5):
             await job_repo.record_chunk_attempt(
                 ChunkAttemptRecord(
@@ -397,9 +408,13 @@ async def test_retry_preserves_history_and_restores_cap_after_database_restart(
         (failed_chunk_id, "pending"),
     ]
     assert (
-        await cache_repo.get_block_translation(key, blocks[0].id) == "cached translated paragraph"
+        await cache_repo.get_block_translation(key, blocks[0].source_hash)
+        == "cached translated paragraph"
     )
-    assert await cache_repo.get_block_translation(key, blocks[1].id) == "another cached paragraph"
+    assert (
+        await cache_repo.get_block_translation(key, blocks[1].source_hash)
+        == "another cached paragraph"
+    )
 
     database_path: Path = job_context["database_path"]
     await connection.close()
@@ -443,7 +458,7 @@ async def test_retry_preserves_history_and_restores_cap_after_database_restart(
             claimed_chunk,
             retry_blocks,
             all_blocks,
-            TranslationPlan(source_language="en", domain="business", register="neutral"),
+            plan,
         )
         assert len(provider.requests) == 4
         async with restarted.execute(
@@ -454,6 +469,48 @@ async def test_retry_preserves_history_and_restores_cap_after_database_restart(
         assert [int(row[0]) for row in attempts] == list(range(1, 9))
     finally:
         await restarted.close()
+
+
+async def test_retry_marks_content_cached_chunks_done_without_retranslation(
+    job_context: dict[str, Any],
+) -> None:
+    service: JobService = job_context["service"]
+    connection = job_context["connection"]
+    cache_repo = job_context["cache_repo"]
+    document_repo = job_context["document_repo"]
+    blocks: list[Block] = job_context["blocks"]
+    job = (await service.create_jobs("doc-1", ["de"], "content-retry"))[0]
+    analysis = await document_repo.get_analysis(job.document_id)
+    assert analysis is not None
+    plan = TranslationPlan(
+        source_language=analysis.source_language,
+        domain=analysis.domain,
+        register=analysis.register,
+        terms=analysis.terms,
+        warnings=analysis.warnings,
+        triage_status=analysis.triage_status,
+    )
+    key = translation_key(job.target_language, job.model, job.prompt_version, job.glossary, plan)
+    async with transaction(connection):
+        for block in blocks:
+            await cache_repo.save_block_translation(key, block.source_hash, f"cached {block.seq}")
+        await job_context["job_repo"].complete_job(
+            job.id,
+            JobStatus.COMPLETED_WITH_ERRORS,
+            JobError(
+                error_code=ErrorCode.PROVIDER_TIMEOUT.value,
+                message=ProviderError(ErrorCode.PROVIDER_TIMEOUT).message,
+                retryable=True,
+            ),
+        )
+
+    retried = await service.retry_job(job.id)
+    assert retried is not None
+    assert retried.done_chunks == retried.total_chunks == 2
+    async with connection.execute(
+        "SELECT status FROM chunks WHERE job_id = ?", (job.id,)
+    ) as cursor:
+        assert {row[0] for row in await cursor.fetchall()} == {"done"}
 
 
 async def test_same_payload_race_is_idempotent_and_conflicting_race_is_rejected(
