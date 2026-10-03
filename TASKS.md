@@ -40,7 +40,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
-| DT-101 | 11 | MCP shared-directory permissions: preflight, terminal errors, read-only doctor and acceptance | done | 3aefe66, 04d96ac, f379293, dd3bc2c, 41a68fe; acceptance delivery below |
+| DT-101 | 11 | MCP shared-directory permissions: preflight, terminal errors, read-only doctor and acceptance | done | 3aefe66, 04d96ac, f379293, dd3bc2c, 41a68fe, d464c8d |
 | DT-1 | 0 | Establish git conventions and task backlog | done | 8590e81, this fix |
 | DT-2 | 0 | Record AI provider and cost strategy; correct decision references | done | 095b67b, 8094265 |
 | DT-3 | 0 | Add REST schemas and adapter skeletons | done | 8669e64 |

@@ -70,3 +70,7 @@ Input includes repeated cached context; this is token usage, not a billing quote
 Raw per-session checkpoint: `/tmp/dt101-token-checkpoint.json`.
 Later verification, commit and report turns are excluded from this checkpoint.
 
+
+Delivery commit: `d464c8d`. Final recorded checkpoint before hash-backfill commit:
+input **12,166,164**, output **78,266**, cached input **11,841,447**.
+Excludes the hash-backfill commit/report turn after this snapshot.
