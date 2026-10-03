@@ -225,3 +225,7 @@ Raw local token_count events are the source; counts are not estimated.
 | /root/outline | 1,301,013 | 5,859 |
 | /root/split_models | 908,603 | 5,311 |
 | **Final delivery snapshot total** | **25,336,293** | **71,208** |
+
+Follow-up DT-102: the owner subsequently selected gpt-6-luna as the independent
+triage default using these measured results. The gpt-4o default recorded above
+is the historical DT-100 delivery choice; OPENAI_MODEL remains gpt-4o-mini.

@@ -267,7 +267,7 @@ class OpenAITriageAgent:
             self._client = None
 
     async def analyze(self, document: DocumentIR) -> TriageResult:
-        model = self._settings.triage_model.strip() or "gpt-4o"
+        model = self._settings.triage_model.strip() or "gpt-6-luna"
         luna_model = model in _LUNA_TRIAGE_MODELS
         budget = _NavigationBudget()
         navigation = _navigation_tools(budget)

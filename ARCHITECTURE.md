@@ -527,7 +527,7 @@ accepted plans on 5/5 files (100%), averaging $0.03404600 and 3.8 requests.
 `OPENAI_MODEL=gpt-4o-mini` remains the independent bulk/glossary default.
 Requested Luna6 and Luna5.6 follow-up runs each accepted 5/5 plans, with mean
 cache-write-adjusted estimates $0.000998178 and $0.002089002. They are explicit
-TRIAGE_MODEL options; default remains gpt-4o. Production token pricing excludes
+TRIAGE_MODEL options; the owner subsequently selected gpt-6-luna as the default. Production token pricing excludes
 the cache-write premium, separately captured only for this evaluation.
 The mini run does not demonstrate convergence improvement; 4/5 required
 the degraded path. The five-file gpt-4o result is a small-corpus observation,

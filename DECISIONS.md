@@ -698,3 +698,15 @@ $0.002089002. They are tested opt-ins, not an automatic default replacement.
 The five-file sample measures convergence, not classification or translation
 quality. Production cost estimates exclude write premiums; the evaluation records
 both estimates. Legacy provider/public contracts remain unchanged.
+
+
+## DT-102: owner-selected Luna 6 triage default
+
+After the DT-100 five-document comparison, the owner explicitly selected
+TRIAGE_MODEL=gpt-6-luna as the default. Settings, real/fake fallback, Compose and
+the environment example agree. OPENAI_MODEL remains gpt-4o-mini for bulk and
+glossary. This reuses the measured Luna compatibility path and preserves explicit
+model overrides, terminal exhaustion, 16 turns and public contracts. Existing
+persisted analyses are not regenerated. The observed 5/5 convergence and roughly
+$0.001 mean estimate are small-corpus evidence, not a population quality claim.
+The production estimator still excludes cache-write premiums as documented.

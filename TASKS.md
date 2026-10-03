@@ -147,6 +147,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-98 | docs | Record PDF glyph and DOCX table defect investigation | done | 9b4aa5b |
 | DT-99 | docs | Backfill agent token usage in execution records | done | f8e32cd |
 | DT-100 | triage | Diagnose, measure and improve bounded triage convergence | done | 3a919c0 |
+| DT-102 | triage | Use measured Luna 6 as the independent triage default | done | pending delivery hash |
 
 ### MCP download error mapping execution (2026-10-03)
 
@@ -546,3 +547,18 @@ Final task-only acceptance: 685 tests passed, 2 live tests deselected; lint clea
 `3a919c0`; documentation/hash backfill follows.
 Concurrent MCP work is excluded. See
 [execution evidence](docs/plans/2026-10-03-triage-convergence-execution.md).
+
+DT-101 is reserved by the concurrent MCP shared-directory permissions plan;
+this owner-requested default follow-up uses DT-102.
+
+### DT-102 acceptance
+
+Owner-selected TRIAGE_MODEL=gpt-6-luna is consistent across Settings, real/fake
+fallbacks, Compose and .env.example. Explicit overrides remain supported;
+OPENAI_MODEL still defaults to gpt-4o-mini. No deployment or fresh live calls.
+Task-only verification: 685 tests passed, 2 live tests deselected; lint clean
+(177 files), typecheck clean (61 source files). Concurrent MCP work is excluded.
+
+Follow-up agent usage checkpoint: input 1,321,533, output 3,876;
+root-only delta since the owner request, including cached input, excluding later
+verification/commit/report turns. Source: local token_count records.

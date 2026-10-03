@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     )
     openai_api_key: SecretStr = SecretStr("")
     openai_model: str = Field(default="gpt-4o-mini", min_length=1)
-    triage_model: str = Field(default="gpt-4o", min_length=1)
+    triage_model: str = Field(default="gpt-6-luna", min_length=1)
     llm_provider: Literal["openai", "fake"] = "openai"
     fake_fail_rate: float = Field(default=0.0, ge=0.0, le=1.0, allow_inf_nan=False)
     fake_latency_ms: int = Field(default=0, ge=0)

@@ -104,7 +104,7 @@ def test_provider_settings_defaults_and_secret_repr(monkeypatch) -> None:
 
     assert settings.openai_api_key == SecretStr("")
     assert settings.openai_model == "gpt-4o-mini"
-    assert settings.triage_model == "gpt-4o"
+    assert settings.triage_model == "gpt-6-luna"
     assert settings.fake_fail_rate == 0.0
     assert settings.fake_latency_ms == 0
     assert settings.fake_fail_mode == "timeout"
@@ -147,10 +147,10 @@ def test_provider_settings_read_environment_and_validate_values(monkeypatch) -> 
 def test_triage_and_bulk_model_settings_are_independent(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     monkeypatch.delenv("TRIAGE_MODEL", raising=False)
-    assert (Settings().openai_model, Settings().triage_model) == ("gpt-4o-mini", "gpt-4o")
+    assert (Settings().openai_model, Settings().triage_model) == ("gpt-4o-mini", "gpt-6-luna")
 
     monkeypatch.setenv("OPENAI_MODEL", "bulk-only")
-    assert (Settings().openai_model, Settings().triage_model) == ("bulk-only", "gpt-4o")
+    assert (Settings().openai_model, Settings().triage_model) == ("bulk-only", "gpt-6-luna")
 
     monkeypatch.delenv("OPENAI_MODEL")
     monkeypatch.setenv("TRIAGE_MODEL", "triage-only")

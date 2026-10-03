@@ -330,7 +330,8 @@ adding the measured cache-write premium. Luna5.6 averaged $0.001821832 and
 $0.002089002 respectively. Request means were 3.8 and 4.0. Maximum per-request
 input was below 8K, so the >272K rate tier does not apply. These are small-corpus
 convergence observations, not representative quality or billing comparisons.
-Independent TRIAGE_MODEL defaults to gpt-4o; both Luna IDs are tested opt-ins.
+The owner subsequently selected TRIAGE_MODEL=gpt-6-luna as the default (DT-102);
+gpt-4o and gpt-5.6-luna remain explicit alternatives.
 Official pricing/compatibility sources:
 [GPT6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and
 [GPT5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna).

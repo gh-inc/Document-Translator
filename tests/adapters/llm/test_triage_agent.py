@@ -373,7 +373,7 @@ async def test_openai_run_passes_navigation_context_bounds_and_disabled_tracing(
 
 @pytest.mark.parametrize(
     ("configured", "expected"),
-    [("  gpt-4o  ", "gpt-4o"), ("   ", "gpt-4o")],
+    [("  gpt-4o  ", "gpt-4o"), ("   ", "gpt-6-luna")],
 )
 async def test_triage_model_is_trimmed_or_uses_its_own_fallback(
     monkeypatch: pytest.MonkeyPatch, configured: str, expected: str

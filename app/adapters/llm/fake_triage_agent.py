@@ -77,7 +77,7 @@ class FakeTriageAgent:
             }
         )
         self._rng = rng or random.Random()
-        self._model = configured.triage_model.strip() or "gpt-4o"
+        self._model = configured.triage_model.strip() or "gpt-6-luna"
 
     async def analyze(self, document: DocumentIR) -> TriageResult:
         if self.config.latency_ms:

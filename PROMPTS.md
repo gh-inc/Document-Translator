@@ -908,3 +908,13 @@ live cost figures, including write-cache premiums. Both Luna candidates accepted
 application bugs; verification ran outside sandbox. Final task-only suite passed
 685 tests, with lint and typecheck clean. Concurrent MCP docs/code hunks are
 excluded from delivery using a scoped index patch.
+
+
+## DT-102 — Luna 6 triage default (2026-10-04)
+
+The owner explicitly selected the cheapest measured candidate as the triage
+default. Root updated Settings, real/fake whitespace fallbacks, Compose, the
+example environment and current operating docs. Bulk stays gpt-4o-mini; existing
+explicit model overrides and persisted analyses are preserved. Existing default,
+independence and actual-wire tests were reused; no extra live calls or model
+quality claims were needed. A task-only snapshot excludes concurrent MCP changes.
