@@ -128,10 +128,10 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-84 | 11 | Document triage-inclusive accounting and measurement limits | done | 03a67cb |
 | DT-85 | 11 | Review, verify and deliver triage cost observability | done | 03a67cb |
 
-| DT-86 | 11 | Implement Markdown adapter, fixture and structural tests | done | pending delivery |
-| DT-87 | 11 | Bypass structural blocks in enqueue and worker completion | done | pending delivery |
-| DT-88 | 11 | Wire Markdown detection, REST/MCP/worker and frontend | done | pending delivery |
-| DT-89 | 11 | Document, review, verify and deliver Markdown support | done | pending delivery |
+| DT-86 | 11 | Implement Markdown adapter, fixture and structural tests | done | 8f52460 |
+| DT-87 | 11 | Bypass structural blocks in enqueue and worker completion | done | 8f52460 |
+| DT-88 | 11 | Wire Markdown detection, REST/MCP/worker and frontend | done | 8f52460 |
+| DT-89 | 11 | Document, review, verify and deliver Markdown support | done | 8f52460 |
 
 ### Triage cost observability execution (2026-10-03)
 

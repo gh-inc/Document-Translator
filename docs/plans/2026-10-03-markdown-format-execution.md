@@ -68,3 +68,4 @@ schema changes. Two existing Pydantic register-shadowing warnings remain.
 Delivery uses one implementation commit plus a separate TASKS hash-backfill
 commit, without amending, rebasing, pushing or including unrelated user edits.
 
+Implementation commit: `8f52460`. Ticket hashes are backfilled separately.
