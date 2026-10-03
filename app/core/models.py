@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,6 +62,18 @@ class DocumentIR(BaseModel):
     size_bytes: int
     page_count: int | None = None
     blocks: list[Block] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RenderResult(BaseModel):
+    """Outcome of rendering one translated document."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    output_path: Path
+    degraded_block_ids: list[str] = Field(default_factory=list)
+    fallback_blocks: int = 0
+    fallback_pages: int = 0
 
 
 class TranslationPlan(BaseModel):

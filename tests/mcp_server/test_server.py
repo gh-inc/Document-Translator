@@ -105,7 +105,8 @@ async def test_shutdown_releases_claim_cancelled_before_run_starts(
 ) -> None:
     content = await asyncio.to_thread(input_pdf.read_bytes)
     async with runtime.services() as services:
-        document, _count = await services.documents.upload(input_pdf.name, content)
+        result = await services.documents.upload(input_pdf.name, content)
+        document = result.document
     await runtime.schedule_triage(document.id)
     # schedule_triage returns immediately after task creation. Cancel before
     # yielding control, so ClaimedTriage.run's finally block cannot execute.

@@ -267,8 +267,14 @@ the proxy does not establish actual translation quality.
 The renderer embeds PyMuPDF's bundled Droid Sans Fallback font buffer under a
 private name so insertion uses the same glyph widths as fitting. A CJK alias
 alone produced clipped Latin lines in review and was rejected. Glyph coverage
-is checked before changing the canvas; unsupported glyphs yield a safe
-`render_failed` error. Complex shaping, RTL, and pixel-perfect typography remain
+is checked before changing the canvas. Nonprinting controls/format characters
+and Unicode variation selectors are removed while newlines and tabs survive.
+If a visible glyph remains unsupported, that entire block keeps its original
+canvas text and the job finishes `completed_with_errors`; supported blocks
+still render. Upload warns with Unicode codes and proceeds. This avoids losing
+a large document because of one icon without introducing glyph substitution
+tables. These transient warnings require no database change. Complex shaping,
+RTL, and pixel-perfect typography remain
 outside the supported PDF scope. Per-render structured logs report both
 fallback blocks and appended pages; long-block tests prove full pagination,
 including Cyrillic and CJK, without truncation.

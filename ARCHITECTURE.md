@@ -202,6 +202,11 @@ return `DocumentAnalysisRecord` (including its persisted `created_at`), while
 triage and translation use the separate in-memory `TranslationPlan`.
 `AttemptOutcome` enumerates the persisted attempt outcomes.
 
+Rendering returns the in-memory `RenderResult`: output path, degraded block IDs,
+and fallback block/page counts. `DocumentIR.warnings` and the named service
+`UploadResult` carry extraction warnings to the upload response; these are not
+persistence records and add no database columns.
+
 Rejected alternatives (full rationale in DECISIONS.md §3): a universal
 Document IR with normalized layout semantics, and a Markdown bridge
 (PDF → MD → translate → MD → PDF).
@@ -344,8 +349,8 @@ Chunk:   pending ──claim──► inflight ──all blocks committed──�
    - per-job **soft cost cap** (`MAX_COST_PER_JOB_USD`, default $2.00): a local
      lock reserves estimated spend before each invocation. A rejected call
      exhausts its chunk with `cost_cap_exceeded`; committed work is preserved.
-     Assembly derives `completed_with_errors` from missing cache rows, as
-     specified by the approved Stage 4 worker plan. Billed attempt usage is
+     Assembly derives `completed_with_errors` from missing cache rows or
+     degraded blocks reported by the renderer. Billed attempt usage is
      persisted; unknown transport usage remains unknown.
 6. **Assemble & render** — the format's renderer re-opens the original file
    from `/data/uploads/{document_id}` and places each block's translation
@@ -371,6 +376,15 @@ cut, §15.)
 
 ### 6.6 Supported PDF fidelity (stated, not implied)
 
+PDF extraction warns about visible characters unavailable in the bundled font.
+Rendering drops nonprinting controls/format characters and Unicode variation
+selectors, preserving newlines and tabs. A translated block with remaining
+unsupported visible glyphs is excluded before redaction, retaining its original
+canvas text. Other blocks render normally; final status is
+`completed_with_errors` when any block degraded, even with complete cache
+coverage. Diagnostics contain stages, exception class names, numeric geometry,
+counts and Unicode codes, never document text or exception messages.
+
 MVP renders translated text into the original block positions with basic
 typography (font size auto-shrink bounded by a minimum readable size; blocks
 that cannot fit fall back to clean regenerated pages). **Text-oriented PDFs
@@ -391,8 +405,8 @@ the DOCX extractor validates the package and maps failures to `corrupt_file`.
 Missing/unsupported files resolve to no adapter. Render failures use
 `render_failed`; raw library exceptions are suppressed. PDF fallback counters
 are local to each render and logged as `pdf_render_completed` with
-`fallback_count` (blocks) and `fallback_pages_count` (appended pages), without
-changing the renderer's `Path` return contract. Measurement and limits are
+`fallback_count` (blocks) and `fallback_pages_count` (appended pages), and are
+returned in `RenderResult` alongside degraded block IDs. Measurement and limits are
 recorded in DECISIONS.md under “Stage 3 format measurements”.
 
 ---

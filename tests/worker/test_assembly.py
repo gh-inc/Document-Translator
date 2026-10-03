@@ -1,18 +1,24 @@
 import asyncio
+from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from structlog.testing import capture_logs
 
+from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
+from app.adapters.formats.registry import FormatRegistry
 from app.adapters.persistence.worker import LeaseLostError
+from app.core.errors import DocumentError, ErrorCode
 from app.core.models import (
     Block,
     DocumentRecord,
     DocumentStatus,
     JobRecord,
     JobStatus,
+    RenderResult,
 )
 from app.worker.assembly import Assembly
 
@@ -139,6 +145,8 @@ class FakeRenderer:
     def __init__(self, persistence: FakePersistence) -> None:
         self.persistence = persistence
         self.translations: dict[str, str] | None = None
+        self.degraded_block_ids: list[str] = []
+        self.result_path: Path | None = None
 
     async def render(
         self,
@@ -146,11 +154,12 @@ class FakeRenderer:
         blocks: list[Block],
         translations: dict[str, str],
         output_path: Path,
-    ) -> Path:
+    ) -> RenderResult:
         assert self.persistence.mode is None
         self.translations = translations
-        await asyncio.to_thread(output_path.write_bytes, b"rendered document")
-        return output_path
+        rendered_path = self.result_path or output_path
+        await asyncio.to_thread(rendered_path.write_bytes, b"rendered document")
+        return RenderResult(output_path=rendered_path, degraded_block_ids=self.degraded_block_ids)
 
 
 class FakeFormatRegistry:
@@ -235,3 +244,112 @@ async def test_assembly_checks_lease_before_publishing(tmp_path: Path) -> None:
     assert storage.saved == []
     assert job_repo.completed == []
     assert persistence.ownership_checks == ["read"]
+
+
+async def test_assembly_marks_complete_cache_as_partial_after_render_degrades(
+    tmp_path: Path,
+) -> None:
+    assembly, renderer, storage, job_repo, _ = _assembly(
+        tmp_path, {"block-1": "Hallo", "block-2": "Welt"}
+    )
+    renderer.degraded_block_ids = ["block-1"]
+    with capture_logs() as logs:
+        status = await assembly.render(_job())
+
+    assert status is JobStatus.COMPLETED_WITH_ERRORS
+    assert job_repo.completed == [("job-1", status)]
+    assert storage.saved[0][1] == b"rendered document"
+    event = next(log for log in logs if log["event"] == "worker_render_degraded")
+    assert event["degraded_block_count"] == 1
+    assert event["degraded_block_ids"] == ["block-1"]
+    assert event["job_id"] == "job-1"
+    assert event["document_id"] == "document-1"
+
+
+async def test_assembly_reads_the_renderer_result_path(tmp_path: Path) -> None:
+    assembly, renderer, storage, _, _ = _assembly(tmp_path, {"block-1": "Hallo", "block-2": "Welt"})
+    renderer.result_path = tmp_path / "alternate.pdf"
+
+    assert await assembly.render(_job()) is JobStatus.DONE
+    assert storage.saved[0][1] == b"rendered document"
+
+
+@pytest.mark.parametrize("stage", ["render", "save_output"])
+async def test_assembly_logs_safe_failure_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    source_text = "PRIVATE SOURCE TEXT"
+    translated_text = "PRIVATE TRANSLATED TEXT"
+    assembly, renderer, storage, job_repo, _ = _assembly(tmp_path, {"block-1": translated_text})
+
+    async def fail(*args, **kwargs):
+        raise ValueError(f"{source_text}: {translated_text}")
+
+    monkeypatch.setattr(renderer if stage == "render" else storage, stage, fail)
+    with capture_logs() as logs, pytest.raises(DocumentError) as error:
+        await assembly.render(_job())
+
+    assert error.value.error_code is ErrorCode.RENDER_FAILED
+    assert job_repo.completed == []
+    event = next(log for log in logs if log["event"] == "worker_assembly_failed")
+    assert event["stage"] == stage
+    assert event["error_type"] == "ValueError"
+    assert event["job_id"] == "job-1"
+    assert event["document_id"] == "document-1"
+    assert source_text not in str(logs)
+    assert translated_text not in str(logs)
+    assert "exc_info" not in event
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_status", "degraded_count"),
+    [
+        ("platon-gliph", JobStatus.COMPLETED_WITH_ERRORS, 1),
+        ("platon-complex", JobStatus.DONE, 0),
+    ],
+)
+async def test_assembly_reports_real_pdf_sample_degradation_with_complete_cache(
+    tmp_path: Path, fixture_name: str, expected_status: JobStatus, degraded_count: int
+) -> None:
+    source = Path(__file__).parents[2] / "samples" / f"{fixture_name}.pdf"
+    document = await PdfExtractor().extract(source, "document-1")
+    translations = {block.id: f"[de] {block.source_text}" for block in document.blocks}
+    persistence = FakePersistence()
+    storage = FakeStorage(source, persistence)
+    job_repo = FakeJobRepository(persistence)
+    registry = FormatRegistry()
+    registry.register("pdf", PdfExtractor(), PdfRenderer())
+    assembly = Assembly(
+        job_repo,
+        FakeCacheRepository(translations),
+        FakeDocumentRepository(document.blocks),
+        registry,
+        storage,
+        persistence=persistence,
+    )
+
+    with capture_logs() as logs:
+        status = await assembly.render(_job())
+
+    assert status is expected_status
+    assert job_repo.completed == [("job-1", expected_status)]
+    output = tmp_path / "translated.pdf"
+    await asyncio.to_thread(output.write_bytes, storage.saved[0][1])
+    rendered_document = await PdfExtractor().extract(output, "output-document")
+    assert rendered_document.page_count >= document.page_count
+    degradation = [log for log in logs if log["event"] == "worker_render_degraded"]
+    if degraded_count:
+        assert len(degradation) == 1
+        assert degradation[0]["degraded_block_count"] == degraded_count
+        degraded_ids = set(degradation[0]["degraded_block_ids"])
+        retained_sources = {
+            block.source_text for block in document.blocks if block.id in degraded_ids
+        }
+        output_text = "\n".join(block.source_text for block in rendered_document.blocks)
+        for retained_source in retained_sources:
+            assert retained_source.splitlines()[0] in output_text
+            # Saving a PDF can split an untouched source block into several
+            # extraction blocks, so compare glyph counts across the output.
+            assert Counter(retained_source.replace("\n", "")) <= Counter(output_text)
+    else:
+        assert degradation == []

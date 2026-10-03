@@ -44,14 +44,16 @@ async def upload_document(
     """Read an upload in bounded chunks and delegate document handling."""
     try:
         content = await _read_bounded_upload(file)
-        document, block_count = await document_service.upload(file.filename or "", content)
+        result = await document_service.upload(file.filename or "", content)
+        document = result.document
         await _schedule_triage(request, background_tasks, document, triage_claims)
         return DocumentUploadResponse(
             id=document.id,
             filename=document.filename,
             format=document.format,
             status=document.status,
-            block_count=block_count,
+            block_count=result.block_count,
+            warnings=result.warnings,
         )
     finally:
         await file.close()

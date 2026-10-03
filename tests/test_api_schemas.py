@@ -50,6 +50,22 @@ def test_document_upload_response_roundtrips_domain_status() -> None:
     )
 
 
+def test_document_upload_response_roundtrips_warnings_and_defaults_to_empty() -> None:
+    value = {
+        "id": "document-1",
+        "filename": "report.pdf",
+        "format": "pdf",
+        "status": DocumentStatus.ANALYZING,
+        "block_count": 12,
+    }
+    first = DocumentUploadResponse.model_validate(value)
+    second = DocumentUploadResponse.model_validate(value)
+    assert first.warnings == []
+    first.warnings.append("Unsupported source character: U+1F3DB")
+    assert second.warnings == []
+    _roundtrip(DocumentUploadResponse, first.model_dump())
+
+
 def test_batch_and_job_summary_responses_roundtrip_nested_error() -> None:
     error = JobError(
         error_code="cost_cap_exceeded",

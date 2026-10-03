@@ -6,10 +6,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import structlog
 from docx import Document
 
 from app.core.errors import DocumentError, ErrorCode
-from app.core.models import Block, DocumentIR
+from app.core.models import Block, DocumentIR, RenderResult
+
+_logger = structlog.get_logger(__name__)
 
 
 class DocxExtractor:
@@ -31,16 +34,20 @@ class DocxRenderer:
         blocks: list[Block],
         translations: dict[str, str],
         output_path: Path,
-    ) -> Path:
+    ) -> RenderResult:
         try:
-            return await asyncio.to_thread(
+            rendered_path = await asyncio.to_thread(
                 _render_sync,
                 original_path,
                 blocks,
                 translations,
                 output_path,
             )
-        except Exception:
+            return RenderResult(output_path=rendered_path)
+        except Exception as error:
+            _logger.error(
+                "docx_render_failed", stage="docx_render", error_type=type(error).__name__
+            )
             raise DocumentError(ErrorCode.RENDER_FAILED) from None
 
 

@@ -11,6 +11,7 @@ from threading import Event
 import pymupdf
 import pytest
 from fastapi import UploadFile
+from pydantic import ValidationError
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
@@ -22,7 +23,7 @@ from app.api.routers.documents import _read_bounded_upload
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
 from app.core.models import DocumentStatus
-from app.core.services.document_service import DocumentService, sanitize_filename
+from app.core.services.document_service import DocumentService, UploadResult, sanitize_filename
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
 
@@ -79,11 +80,14 @@ async def test_upload_persists_document_blocks_without_analysis(
     service, repository, _storage = document_context
     content = await asyncio.to_thread((SAMPLES / f"sample_en.{extension}").read_bytes)
 
-    document, block_count = await service.upload(
+    result = await service.upload(
         f"C:\\fakepath\\report.{extension}",
         content,
     )
 
+    document = result.document
+    block_count = result.block_count
+    assert result.warnings == []
     persisted_document = await repository.get_document(document.id)
     blocks = await repository.get_blocks(document.id)
     analysis = await repository.get_analysis(document.id)
@@ -97,6 +101,87 @@ async def test_upload_persists_document_blocks_without_analysis(
     assert block_count > 0
     assert len(blocks) == block_count
     assert analysis is None
+
+
+async def test_pdf_upload_and_duplicate_return_ephemeral_safe_warnings(
+    document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
+) -> None:
+    service, repository, _storage = document_context
+    content = await asyncio.to_thread((SAMPLES / "platon-gliph.pdf").read_bytes)
+
+    first = await service.upload("platon-gliph.pdf", content)
+    blocks = await repository.get_blocks(first.document.id)
+    async with service._transaction_context():
+        await repository.update_document_status(first.document.id, DocumentStatus.EXTRACTED)
+    duplicate = await service.upload("renamed.pdf", content)
+
+    assert first.warnings
+    assert duplicate.warnings == first.warnings
+    assert duplicate.document.id == first.document.id
+    assert duplicate.document.filename == "platon-gliph.pdf"
+    assert duplicate.document.status is DocumentStatus.EXTRACTED
+    assert duplicate.block_count == first.block_count
+    assert await repository.get_blocks(first.document.id) == blocks
+    assert await repository.get_analysis(first.document.id) is None
+    warning_text = " ".join(first.warnings)
+    assert "U+" in warning_text
+    assert all(block.source_text not in warning_text for block in blocks)
+    assert "warnings" not in duplicate.document.model_dump()
+
+
+@pytest.mark.parametrize("filename", ["platon-complex.pdf", "platon-gliph.docx"])
+async def test_clean_pdf_and_docx_uploads_have_no_warnings_including_duplicates(
+    document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
+    filename: str,
+) -> None:
+    service, _repository, _storage = document_context
+    content = await asyncio.to_thread((SAMPLES / filename).read_bytes)
+
+    first = await service.upload(filename, content)
+    duplicate = await service.upload(filename, content)
+
+    assert first.warnings == duplicate.warnings == []
+    assert first.document == duplicate.document
+    assert first.block_count == duplicate.block_count
+
+
+async def test_duplicate_warning_extraction_failure_preserves_existing_upload(
+    document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repository, storage = document_context
+    content = await asyncio.to_thread((SAMPLES / "sample_en.pdf").read_bytes)
+    first = await service.upload("sample.pdf", content)
+    blocks = await repository.get_blocks(first.document.id)
+
+    async def fail_extract(file_path: Path, document_id: str) -> None:
+        raise DocumentError(ErrorCode.CORRUPT_FILE)
+
+    monkeypatch.setattr(PdfExtractor, "extract", staticmethod(fail_extract))
+    with pytest.raises(DocumentError) as raised:
+        await service.upload("sample.pdf", content)
+
+    assert raised.value.error_code is ErrorCode.CORRUPT_FILE
+    assert await repository.get_document(first.document.id) == first.document
+    assert await repository.get_blocks(first.document.id) == blocks
+    original = await storage.get_upload_path(first.document.id)
+    assert await asyncio.to_thread(original.read_bytes) == content
+
+
+async def test_upload_result_rejects_extra_fields_and_isolates_warning_defaults(
+    document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
+) -> None:
+    service, _repository, _storage = document_context
+    content = await asyncio.to_thread((SAMPLES / "sample_en.docx").read_bytes)
+    result = await service.upload("sample.docx", content)
+    value = {"document": result.document, "block_count": result.block_count}
+    first = UploadResult.model_validate(value)
+    second = UploadResult.model_validate(value)
+    first.warnings.append("warning")
+
+    assert second.warnings == []
+    with pytest.raises(ValidationError):
+        UploadResult.model_validate({**value, "unexpected": True})
 
 
 def test_filename_sanitizer_uses_safe_basename_for_both_path_styles() -> None:
@@ -192,7 +277,9 @@ async def test_400_page_pdf_is_accepted_and_401_page_pdf_is_rejected(
     await asyncio.to_thread(_create_text_pdf, accepted_path, 400)
     accepted_bytes = await asyncio.to_thread(accepted_path.read_bytes)
 
-    accepted_document, block_count = await service.upload("accepted.pdf", accepted_bytes)
+    result = await service.upload("accepted.pdf", accepted_bytes)
+    accepted_document = result.document
+    block_count = result.block_count
 
     assert accepted_document.page_count == 400
     assert block_count == 1
@@ -234,7 +321,9 @@ async def test_extracted_text_limit_uses_utf8_bytes_and_cleans_rejected_upload(
         extracted_text_bytes,
     )
 
-    accepted_document, accepted_block_count = await service.upload("accepted.docx", content)
+    result = await service.upload("accepted.docx", content)
+    accepted_document = result.document
+    accepted_block_count = result.block_count
 
     assert accepted_block_count == len(extracted.blocks)
     assert await repository.get_document(accepted_document.id) is not None

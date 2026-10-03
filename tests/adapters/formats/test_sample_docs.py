@@ -52,7 +52,9 @@ async def test_generated_samples_are_reproducible_and_docx_roundtrips(tmp_path: 
         )
     )
     output = tmp_path / "translated.docx"
-    assert await renderer.render(source, document.blocks, result.translations, output) == output
+    rendered = await renderer.render(source, document.blocks, result.translations, output)
+    assert rendered.output_path == output
+    assert rendered.degraded_block_ids == []
     _, original_styles, original_tables = await asyncio.to_thread(_docx_details, source)
     texts, styles, tables = await asyncio.to_thread(_docx_details, output)
     assert styles == original_styles
@@ -73,3 +75,23 @@ async def test_zip_signature_routes_to_safe_docx_package_validation(tmp_path: Pa
         await adapters[0].extract(malformed, "invalid-document")
     assert error.value.error_code is ErrorCode.CORRUPT_FILE
     assert error.value.retryable is False
+
+
+@pytest.mark.parametrize("fixture_name", ["platon-gliph", "platon-complex"])
+async def test_platon_docx_samples_have_no_glyph_degradation(
+    tmp_path: Path, fixture_name: str
+) -> None:
+    source = Path(__file__).parents[3] / "samples" / f"{fixture_name}.docx"
+    document = await DocxExtractor().extract(source, fixture_name)
+    translations = {block.id: f"[de] {block.source_text}" for block in document.blocks}
+
+    result = await DocxRenderer().render(
+        source, document.blocks, translations, tmp_path / "translated.docx"
+    )
+
+    assert document.blocks
+    assert document.warnings == []
+    assert result.degraded_block_ids == []
+    assert result.fallback_blocks == result.fallback_pages == 0
+    texts, _, _ = await asyncio.to_thread(_docx_details, result.output_path)
+    assert all(translation in texts for translation in translations.values())

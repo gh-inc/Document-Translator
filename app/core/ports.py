@@ -18,6 +18,7 @@ from app.core.models import (
     JobError,
     JobRecord,
     JobStatus,
+    RenderResult,
     TranslationPlan,
 )
 
@@ -37,7 +38,7 @@ class DocumentRenderer(Protocol):
         blocks: list[Block],
         translations: dict[str, str],
         output_path: Path,
-    ) -> Path: ...
+    ) -> RenderResult: ...
 
 
 class TriageAgent(Protocol):

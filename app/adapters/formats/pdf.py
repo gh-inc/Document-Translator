@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import math
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ import pymupdf
 import structlog
 
 from app.core.errors import DocumentError, ErrorCode
-from app.core.models import Block, DocumentIR
+from app.core.models import Block, DocumentIR, RenderResult
 
 # A single non-whitespace character is valid text; blank and image-only PDFs
 # have no extracted text and are rejected without misclassifying short notes.
@@ -22,6 +23,26 @@ _MIN_FONT_SIZE = 6.0
 _INITIAL_FONT_SIZE = 11.0
 _FONT_SIZE_STEP = 0.5
 _logger = structlog.get_logger(__name__)
+_RENDER_FONT = pymupdf.Font("cjk")
+_KEEP_CONTROL = frozenset({"\n", "\t"})
+
+
+def _droppable_character(char: str) -> bool:
+    code = ord(char)
+    return (
+        (unicodedata.category(char) in {"Cc", "Cf"} and char not in _KEEP_CONTROL)
+        or 0xFE00 <= code <= 0xFE0F
+        or 0xE0100 <= code <= 0xE01EF
+    )
+
+
+def _split_unsupported(text: str) -> tuple[str, set[str]]:
+    """Remove non-printing artifacts and report visible glyphs the font lacks."""
+    cleaned = "".join(char for char in text if not _droppable_character(char))
+    unsupported = {
+        char for char in cleaned if not char.isspace() and not _RENDER_FONT.has_glyph(ord(char))
+    }
+    return cleaned, unsupported
 
 
 class PdfExtractor:
@@ -34,6 +55,19 @@ class PdfExtractor:
             raise
         except Exception:
             raise DocumentError(ErrorCode.CORRUPT_FILE) from None
+
+    @staticmethod
+    def source_warnings(blocks: list[Block]) -> list[str]:
+        """Recompute upload warnings from source text, including stored blocks."""
+        problematic: set[str] = set()
+        for block in blocks:
+            _, unsupported = _split_unsupported(block.source_text)
+            problematic.update(unsupported)
+            problematic.update(char for char in block.source_text if _droppable_character(char))
+        if not problematic:
+            return []
+        codes = ", ".join(f"U+{ord(char):04X}" for char in sorted(problematic))
+        return [f"PDF source contains characters requiring rendering fallback or cleanup: {codes}"]
 
     @staticmethod
     def _extract_sync(file_path: Path, document_id: str) -> DocumentIR:
@@ -82,6 +116,7 @@ class PdfExtractor:
                 size_bytes=file_path.stat().st_size,
                 page_count=document.page_count,
                 blocks=blocks,
+                warnings=PdfExtractor.source_warnings(blocks),
             )
 
 
@@ -94,22 +129,29 @@ class PdfRenderer:
         blocks: list[Block],
         translations: dict[str, str],
         output_path: Path,
-    ) -> Path:
+    ) -> RenderResult:
         try:
-            fallback_count, fallback_pages_count = await asyncio.to_thread(
+            fallback_count, fallback_pages_count, degraded_block_ids = await asyncio.to_thread(
                 self._render_sync, original_path, blocks, translations, output_path
             )
         except DocumentError:
             raise
-        except Exception:
+        except Exception as error:
+            _logger.error("pdf_render_failed", stage="render", error_type=type(error).__name__)
             raise DocumentError(ErrorCode.RENDER_FAILED) from None
 
         _logger.info(
             "pdf_render_completed",
             fallback_count=fallback_count,
             fallback_pages_count=fallback_pages_count,
+            degraded_block_count=len(degraded_block_ids),
         )
-        return output_path
+        return RenderResult(
+            output_path=output_path,
+            degraded_block_ids=degraded_block_ids,
+            fallback_blocks=fallback_count,
+            fallback_pages=fallback_pages_count,
+        )
 
     @staticmethod
     def _render_sync(
@@ -117,27 +159,35 @@ class PdfRenderer:
         blocks: list[Block],
         translations: dict[str, str],
         output_path: Path,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[str]]:
         with pymupdf.open(original_path) as document:
             # PyMuPDF's bundled Droid Sans Fallback supports Latin, Cyrillic,
             # and CJK without relying on host-installed font packages. Embed
             # that exact buffer under a private name so measured and inserted
             # glyph widths use the same font data.
             font_name = "dtransunicode"
-            font = pymupdf.Font("cjk")
+            font = _RENDER_FONT
             font_buffer = font.buffer
             render_items: list[tuple[int, pymupdf.Rect, str]] = []
+            degraded_block_ids: list[str] = []
+            protected_by_page: dict[int, list[pymupdf.Rect]] = {}
 
             for block in blocks:
                 translated_text = translations.get(block.id)
                 if translated_text is None:
                     continue
-                if any(
-                    not font.has_glyph(ord(char)) for char in translated_text if not char.isspace()
-                ):
-                    raise DocumentError(ErrorCode.RENDER_FAILED)
                 page_number, rectangle = _metadata_rectangle(block, document)
-                render_items.append((page_number, rectangle, translated_text))
+                cleaned, unsupported = _split_unsupported(translated_text)
+                if unsupported:
+                    _logger.warning(
+                        "pdf_block_degraded",
+                        block_id=block.id,
+                        unsupported_codes=[f"U+{ord(char):04X}" for char in sorted(unsupported)],
+                    )
+                    degraded_block_ids.append(block.id)
+                    protected_by_page.setdefault(page_number, []).append(rectangle)
+                    continue
+                render_items.append((page_number, rectangle, cleaned))
 
             # Redact only PDF text. Disabling image and graphics redaction keeps
             # raster images and vector artwork on the original canvas.
@@ -147,7 +197,12 @@ class PdfRenderer:
             for page_number, items in items_by_page.items():
                 page = document[page_number]
                 for rectangle, _ in items:
-                    page.add_redact_annot(rectangle, fill=False, cross_out=False)
+                    # Extracted block bboxes can overlap. Protect retained
+                    # source glyphs even from a neighboring block's redaction.
+                    for redaction in _unprotected_rectangles(
+                        rectangle, protected_by_page.get(page_number, [])
+                    ):
+                        page.add_redact_annot(redaction, fill=False, cross_out=False)
                 page.apply_redactions(images=0, graphics=0, text=0)
 
             fallback_count = 0
@@ -191,8 +246,35 @@ class PdfRenderer:
                     )
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            document.save(output_path, garbage=4, deflate=True)
-            return fallback_count, fallback_pages_count
+            try:
+                document.save(output_path, garbage=4, deflate=True)
+            except Exception as error:
+                _logger.error("pdf_render_failed", stage="save", error_type=type(error).__name__)
+                raise DocumentError(ErrorCode.RENDER_FAILED) from None
+            return fallback_count, fallback_pages_count, degraded_block_ids
+
+
+def _unprotected_rectangles(
+    rectangle: pymupdf.Rect, protected: list[pymupdf.Rect]
+) -> list[pymupdf.Rect]:
+    """Subtract retained source regions from a neighboring redaction bbox."""
+    pieces = [rectangle]
+    for retained in protected:
+        remaining: list[pymupdf.Rect] = []
+        for piece in pieces:
+            intersection = piece & retained
+            if intersection.is_empty:
+                remaining.append(piece)
+                continue
+            candidates = [
+                pymupdf.Rect(piece.x0, piece.y0, piece.x1, intersection.y0),
+                pymupdf.Rect(piece.x0, intersection.y1, piece.x1, piece.y1),
+                pymupdf.Rect(piece.x0, intersection.y0, intersection.x0, intersection.y1),
+                pymupdf.Rect(intersection.x1, intersection.y0, piece.x1, intersection.y1),
+            ]
+            remaining.extend(candidate for candidate in candidates if not candidate.is_empty)
+        pieces = remaining
+    return pieces
 
 
 def _metadata_rectangle(block: Block, document: pymupdf.Document) -> tuple[int, pymupdf.Rect]:
@@ -205,16 +287,24 @@ def _metadata_rectangle(block: Block, document: pymupdf.Document) -> tuple[int, 
         or not isinstance(page_number, int)
         or page_number < 0
         or page_number >= document.page_count
-        or not isinstance(bbox, list | tuple)
-        or len(bbox) != 4
     ):
+        fields = {"page": page_number} if type(page_number) is int else {}
+        _logger.error("pdf_render_failed", stage="metadata", reason="page_out_of_range", **fields)
         raise DocumentError(ErrorCode.RENDER_FAILED)
 
+    if (
+        not isinstance(bbox, list | tuple)
+        or len(bbox) != 4
+        or any(type(value) not in {int, float} for value in bbox)
+    ):
+        _logger.error("pdf_render_failed", stage="metadata", reason="bbox_shape", page=page_number)
+        raise DocumentError(ErrorCode.RENDER_FAILED)
     try:
         coordinates = tuple(float(value) for value in bbox)
-    except (TypeError, ValueError, OverflowError):
-        raise DocumentError(ErrorCode.RENDER_FAILED) from None
-    if not all(math.isfinite(value) for value in coordinates):
+    except OverflowError:
+        coordinates = ()
+    if not coordinates or not all(math.isfinite(value) for value in coordinates):
+        _logger.error("pdf_render_failed", stage="metadata", reason="not_finite", page=page_number)
         raise DocumentError(ErrorCode.RENDER_FAILED)
 
     rectangle = pymupdf.Rect(coordinates)
@@ -227,6 +317,14 @@ def _metadata_rectangle(block: Block, document: pymupdf.Document) -> tuple[int, 
         or rectangle.x1 > page_rect.x1
         or rectangle.y1 > page_rect.y1
     ):
+        _logger.error(
+            "pdf_render_failed",
+            stage="metadata",
+            reason="out_of_bounds",
+            page=page_number,
+            bbox=list(coordinates),
+            page_rect=list(page_rect),
+        )
         raise DocumentError(ErrorCode.RENDER_FAILED)
     return page_number, rectangle
 
@@ -246,11 +344,13 @@ def _append_paginated_text(
     line_height = font_size * 1.25
     available_width = page_width - (2 * margin)
     if available_width <= 0 or page_height <= 2 * margin + line_height:
+        _logger.error("pdf_render_failed", stage="fallback", reason="page_too_small")
         raise DocumentError(ErrorCode.RENDER_FAILED)
 
     lines = _wrap_text(text, font, font_size, available_width)
     lines_per_page = int((page_height - 2 * margin) // line_height)
     if lines_per_page < 1:
+        _logger.error("pdf_render_failed", stage="fallback", reason="lines_per_page")
         raise DocumentError(ErrorCode.RENDER_FAILED)
 
     page_count = 0
@@ -303,6 +403,7 @@ def _wrap_text(text: str, font: pymupdf.Font, font_size: float, max_width: float
                     else:
                         piece = candidate
                     if font.text_length(piece, fontsize=font_size) > max_width:
+                        _logger.error("pdf_render_failed", stage="wrap", reason="char_too_wide")
                         raise DocumentError(ErrorCode.RENDER_FAILED)
                 if piece:
                     pieces.append(piece)

@@ -58,7 +58,8 @@ class McpTools:
             root = self.runtime.settings.mcp_shared_dir
             input_path, content = await asyncio.to_thread(_read_input, root, path)
             async with self.runtime.services() as services:
-                document, _count = await services.documents.upload(input_path.name, content)
+                result = await services.documents.upload(input_path.name, content)
+                document = result.document
             document_id = document.id
             readiness = self.runtime.start_readiness(document)
             try:

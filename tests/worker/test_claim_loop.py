@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
@@ -28,6 +31,7 @@ from app.core.models import (
     JobRecord,
     JobStatus,
 )
+from app.worker import claim_loop
 from app.worker.claim_loop import ClaimLoop
 from app.worker.keys import translation_key
 
@@ -339,7 +343,10 @@ async def test_claim_loop_waits_for_live_chunk_lease_then_releases_it(tmp_path: 
 
 async def test_claim_loop_recovers_assembling_and_persists_safe_render_failure(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    logger = Mock()
+    monkeypatch.setattr(claim_loop, "_logger", logger)
     for scenario in ("assembling", "render_failure"):
         scenario_path = tmp_path / scenario
         scenario_path.mkdir()
@@ -475,6 +482,12 @@ async def test_claim_loop_recovers_assembling_and_persists_safe_render_failure(
                 assert finished.error_code == ErrorCode.RENDER_FAILED.value
                 assert finished.error_detail == DocumentError(ErrorCode.RENDER_FAILED).message
                 assert provider.calls == job.total_chunks
+                logger.error.assert_called_once_with(
+                    "worker_render_failed",
+                    job_id=job.id,
+                    document_id=job.document_id,
+                    error_code=ErrorCode.RENDER_FAILED.value,
+                )
         finally:
             if worker_task is not None and not worker_task.done():
                 shutdown.set()

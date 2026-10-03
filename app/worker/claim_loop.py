@@ -148,7 +148,12 @@ class ClaimLoop:
                 raise
             except Exception:
                 await self._race_heartbeat(self._fail_render(job), heartbeat_task)
-                _logger.error("worker_render_failed", job_id=job.id)
+                _logger.error(
+                    "worker_render_failed",
+                    job_id=job.id,
+                    document_id=job.document_id,
+                    error_code=ErrorCode.RENDER_FAILED.value,
+                )
         finally:
             await self._cancel_active_chunks()
             heartbeat_task.cancel()

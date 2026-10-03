@@ -9,6 +9,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
 from app.core.models import DocumentRecord, DocumentStatus, TriageStatus
@@ -23,6 +25,16 @@ _SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._ -]")
 TransactionContext = Callable[[], AbstractAsyncContextManager[object]]
 UploadCleanup = Callable[[str], Awaitable[None]]
 UploadContext = Callable[[str], AbstractAsyncContextManager[object]]
+
+
+class UploadResult(BaseModel):
+    """Upload outcome, including ephemeral format-adapter warnings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document: DocumentRecord
+    block_count: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 class DocumentService:
@@ -58,12 +70,12 @@ class DocumentService:
         blocks = await self._document_repo.get_blocks(document_id)
         return document, len(blocks)
 
-    async def upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
-        """Validate and persist one upload; return its record and extracted block count."""
+    async def upload(self, filename: str, content: bytes) -> UploadResult:
+        """Validate and persist an upload, returning adapter warnings without persisting them."""
         async with self._upload_lock:
             return await self._upload(filename, content)
 
-    async def _upload(self, filename: str, content: bytes) -> tuple[DocumentRecord, int]:
+    async def _upload(self, filename: str, content: bytes) -> UploadResult:
         safe_filename = sanitize_filename(filename)
         if len(content) > MAX_UPLOAD_BYTES:
             raise ServiceError(ErrorCode.FILE_TOO_LARGE, status_code=413)
@@ -79,12 +91,24 @@ class DocumentService:
 
     async def _upload_document(
         self, document_id: str, safe_filename: str, file_format: str, content: bytes
-    ) -> tuple[DocumentRecord, int]:
+    ) -> UploadResult:
         existing = await self._document_repo.get_document(document_id)
         if existing is not None:
             if existing.format != file_format:
                 raise DocumentError(ErrorCode.CORRUPT_FILE)
-            return existing, len(await self._document_repo.get_blocks(document_id))
+            # Warnings are ephemeral. Regenerate them through the format port
+            # on duplicate uploads, without interpreting opaque block metadata.
+            upload_path = await self._file_storage.get_upload_path(document_id)
+            resolved = await self._format_registry.resolve(upload_path)
+            if resolved is None:
+                raise DocumentError(ErrorCode.CORRUPT_FILE)
+            extractor, _renderer = resolved
+            document_ir = await extractor.extract(upload_path, document_id)
+            return UploadResult(
+                document=existing,
+                block_count=len(await self._document_repo.get_blocks(document_id)),
+                warnings=document_ir.warnings,
+            )
         save_task: asyncio.Task[Path] | None = None
         try:
             save_task = asyncio.create_task(
@@ -128,7 +152,11 @@ class DocumentService:
                     DocumentStatus.ANALYZING,
                 )
             document = document.model_copy(update={"status": DocumentStatus.ANALYZING})
-            return document, len(document_ir.blocks)
+            return UploadResult(
+                document=document,
+                block_count=len(document_ir.blocks),
+                warnings=document_ir.warnings,
+            )
         except BaseException:
             if save_task is not None:
                 await _finish_task(save_task)

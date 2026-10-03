@@ -11,6 +11,7 @@ class DocumentUploadResponse(BaseModel):
     format: str
     status: DocumentStatus
     block_count: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 class CreateJobRequest(BaseModel):

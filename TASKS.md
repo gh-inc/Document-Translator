@@ -34,6 +34,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 8. Frontend (React, Stark Future branding)
 9. Compose delivery, chaos script, and remaining acceptance measurements
 10. Submission documentation, Docker CI, and honest final verification
+11. Defects found in operation (render resilience, DOCX tables)
 
 ## Tasks
 
@@ -117,6 +118,25 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-73 | 10 | Verify MCP with an isolated editor client | done | f65699e |
 | DT-74 | 10 | Verify secret hygiene and record delivery commits | done | f65699e |
 | DT-75 | 10 | Run final checks and independently review Stage 10 | done | f65699e |
+| DT-76 | 11 | Restore render diagnostics behind opaque errors | done | |
+| DT-77 | 11 | Degrade PDF blocks with unsupported glyphs instead of failing | done | |
+| DT-78 | 11 | Warn about unsupported source glyphs at upload | done | |
+
+### PDF glyph resilience execution (2026-10-03)
+
+DT-76–DT-78 implement the approved glyph-resilience plan. Disjoint agents owned
+PDF, upload warning propagation, and worker/DOCX changes; root supplied shared
+contracts, integrated checks, docs and commits. Independent review found no
+outstanding important findings. Unsupported PDF blocks retain original glyphs,
+including through neighboring overlapping redactions; job status is decided
+after rendering. Upload warnings remain transient; no schema changes.
+
+Verification: 526 backend tests passed, 2 live tests deselected; lint clean
+(151 files), mypy clean (59 source files). Platon PDF fixtures yield exactly
+one/zero degraded blocks; both DOCX fixtures have empty degradation. No live
+provider calls. Unrelated user edits remain excluded from commits, including
+DT-79 DOCX table work. Details: [execution record](docs/plans/2026-10-03-pdf-glyph-resilience-execution.md).
+Delivery hashes are backfilled in a separate commit without rewriting history.
 
 ### Stage 10 execution decomposition (2026-10-03)
 

@@ -12,6 +12,8 @@ from app.api.main import create_app
 from app.config import Settings
 from app.core.models import Block, DocumentStatus
 
+SAMPLES = Path(__file__).resolve().parents[2] / "samples"
+
 
 @pytest.fixture
 async def runtime(tmp_path: Path) -> AsyncIterator[tuple[Settings, httpx.AsyncClient]]:
@@ -61,6 +63,7 @@ async def test_document_status_returns_persisted_state_and_own_block_count(
             "format": "docx",
             "status": status,
             "block_count": 2,
+            "warnings": [],
         }
         # Reading readiness must not claim or start analysis.
         document = await repo.get_document("report")
@@ -93,6 +96,7 @@ async def test_document_status_reports_zero_for_no_persisted_blocks(
         "format": "pdf",
         "status": "failed",
         "block_count": 0,
+        "warnings": [],
     }
 
 
@@ -109,3 +113,42 @@ async def test_unknown_document_status_returns_catalogued_not_found(
         "message": "Requested resource was not found",
         "retryable": False,
     }
+
+
+async def test_pdf_upload_returns_warnings_for_initial_and_duplicate_uploads_only(
+    runtime: tuple[Settings, httpx.AsyncClient],
+) -> None:
+    _settings, client = runtime
+    content = (SAMPLES / "platon-gliph.pdf").read_bytes()
+
+    first = await client.post(
+        "/api/documents", files={"file": ("glyph.pdf", content, "application/pdf")}
+    )
+    duplicate = await client.post(
+        "/api/documents", files={"file": ("glyph.pdf", content, "application/pdf")}
+    )
+
+    assert first.status_code == duplicate.status_code == 200
+    warnings = first.json()["warnings"]
+    assert warnings
+    assert all("U+" in warning for warning in warnings)
+    assert duplicate.json()["warnings"] == warnings
+    assert duplicate.json()["id"] == first.json()["id"]
+    document_id = first.json()["id"]
+    status = await client.get(f"/api/documents/{document_id}")
+    retry = await client.post(f"/api/documents/{document_id}/retry-triage")
+    assert status.status_code == retry.status_code == 200
+    assert status.json()["warnings"] == retry.json()["warnings"] == []
+
+
+@pytest.mark.parametrize("filename", ["platon-complex.pdf", "platon-gliph.docx"])
+async def test_clean_pdf_and_docx_rest_uploads_return_empty_warnings(
+    runtime: tuple[Settings, httpx.AsyncClient], filename: str
+) -> None:
+    _settings, client = runtime
+    content = (SAMPLES / filename).read_bytes()
+
+    response = await client.post("/api/documents", files={"file": (filename, content)})
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == []

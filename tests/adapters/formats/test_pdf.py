@@ -9,7 +9,7 @@ import pymupdf
 import pytest
 import structlog
 
-from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
+from app.adapters.formats.pdf import PdfExtractor, PdfRenderer, _split_unsupported
 from app.core.errors import DocumentError, ErrorCode
 
 
@@ -246,3 +246,146 @@ async def test_pdf_renderer_rejects_out_of_page_bbox_with_catalogued_error(
         await PdfRenderer().render(source, [invalid_block], {block.id: "Translation"}, output)
 
     assert error.value.error_code == ErrorCode.RENDER_FAILED
+
+
+def test_pdf_filter_removes_nonprinting_artifacts_and_reports_visible_unsupported_glyph() -> None:
+    cleaned, unsupported = _split_unsupported("Hello\x01\x02\u200d\ufe0f\U000e0100\n\t🏛 world")
+
+    assert cleaned == "Hello\n\t🏛 world"
+    assert unsupported == {"🏛"}
+    assert _split_unsupported("Привет 世界\n\t")[1] == set()
+
+
+@pytest.mark.asyncio
+async def test_pdf_degraded_block_retains_source_and_other_block_is_translated(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "degraded.pdf"
+    output = tmp_path / "output.pdf"
+    _make_pdf(source, [((45, 60), "Retain this original."), ((45, 150), "Replace this original.")])
+    blocks = (await PdfExtractor().extract(source, "degraded")).blocks
+
+    with structlog.testing.capture_logs() as logs:
+        result = await PdfRenderer().render(
+            source,
+            blocks,
+            {blocks[0].id: "Secret translated text 🏛", blocks[1].id: "Replaced\x01\ufe0f content."},
+            output,
+        )
+
+    assert result.output_path == output
+    assert result.degraded_block_ids == [blocks[0].id]
+    assert result.fallback_blocks == result.fallback_pages == 0
+    with pymupdf.open(output) as rendered:
+        text = rendered[0].get_text()
+        assert "Retain this original." in text
+        assert "Replace this original." not in text
+        assert "Replaced content." in text
+    degraded_log = next(log for log in logs if log["event"] == "pdf_block_degraded")
+    assert degraded_log["unsupported_codes"] == ["U+1F3DB"]
+    assert "Secret translated text" not in str(logs)
+    assert "Retain this original" not in str(logs)
+
+
+@pytest.mark.asyncio
+async def test_pdf_neighboring_redaction_preserves_overlapping_degraded_block(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "overlap.pdf"
+    output = tmp_path / "output.pdf"
+    _make_pdf(source, [((45, 60), "Retain this original."), ((45, 150), "Replace this original.")])
+    blocks = (await PdfExtractor().extract(source, "overlap")).blocks
+    overlapping = blocks[1].model_copy(
+        update={"format_metadata": {"page": 0, "bbox": [0, 0, 300, 200]}}
+    )
+
+    result = await PdfRenderer().render(
+        source, [blocks[0], overlapping], {blocks[0].id: "🏛", overlapping.id: "Replacement"}, output
+    )
+
+    assert result.degraded_block_ids == [blocks[0].id]
+    with pymupdf.open(output) as rendered:
+        text = rendered[0].get_text()
+        assert "Retain this original." in text
+        assert "Replace this original." not in text
+        assert "Replacement" in text
+
+
+@pytest.mark.asyncio
+async def test_pdf_render_exception_logging_never_includes_document_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret = "Confidential source and translation fragments"
+
+    def fail(*args):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(PdfRenderer, "_render_sync", staticmethod(fail))
+    with structlog.testing.capture_logs() as logs, pytest.raises(DocumentError) as error:
+        await PdfRenderer().render(tmp_path / "source.pdf", [], {}, tmp_path / "output.pdf")
+
+    assert error.value.error_code == ErrorCode.RENDER_FAILED
+    assert logs == [
+        {
+            "event": "pdf_render_failed",
+            "stage": "render",
+            "error_type": "RuntimeError",
+            "log_level": "error",
+        }
+    ]
+    assert secret not in str(logs)
+    assert secret not in str(error.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metadata", "reason"),
+    [
+        ({"page": "SECRET", "bbox": [1, 2, 3, 4]}, "page_out_of_range"),
+        ({"page": 0, "bbox": "SECRET"}, "bbox_shape"),
+        ({"page": 0, "bbox": [1, 2, "SECRET", 4]}, "bbox_shape"),
+        ({"page": 0, "bbox": [1, 2, float("nan"), 4]}, "not_finite"),
+        ({"page": 0, "bbox": [-1, 2, 3, 4]}, "out_of_bounds"),
+    ],
+)
+async def test_pdf_metadata_diagnostics_only_log_validated_geometry(
+    tmp_path: Path, metadata: dict, reason: str
+) -> None:
+    source = tmp_path / "metadata.pdf"
+    _make_pdf(source, [((45, 60), "SECRET source document")])
+    block = (await PdfExtractor().extract(source, "metadata")).blocks[0]
+    invalid = block.model_copy(update={"format_metadata": metadata})
+
+    with structlog.testing.capture_logs() as logs, pytest.raises(DocumentError):
+        await PdfRenderer().render(
+            source, [invalid], {block.id: "SECRET translation"}, tmp_path / "out.pdf"
+        )
+
+    assert logs[0]["stage"] == "metadata"
+    assert logs[0]["reason"] == reason
+    assert "SECRET" not in str(logs)
+    if reason == "out_of_bounds":
+        assert logs[0]["bbox"] == [-1.0, 2.0, 3.0, 4.0]
+        assert logs[0]["page_rect"] == [0.0, 0.0, 300.0, 300.0]
+    else:
+        assert "bbox" not in logs[0]
+
+
+@pytest.mark.asyncio
+async def test_pdf_save_exception_diagnostics_are_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "save.pdf"
+    _make_pdf(source, [((45, 60), "Confidential source")])
+    blocks = (await PdfExtractor().extract(source, "save")).blocks
+
+    def fail_save(*args, **kwargs):
+        raise RuntimeError("Confidential translation text from library error")
+
+    monkeypatch.setattr(pymupdf.Document, "save", fail_save)
+    with structlog.testing.capture_logs() as logs, pytest.raises(DocumentError):
+        await PdfRenderer().render(source, blocks, {}, tmp_path / "out.pdf")
+
+    assert logs[0]["stage"] == "save"
+    assert logs[0]["error_type"] == "RuntimeError"
+    assert "Confidential" not in str(logs)

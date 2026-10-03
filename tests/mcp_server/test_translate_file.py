@@ -91,7 +91,8 @@ async def test_busy_sqlite_claim_respects_deadline_and_analysis_resumes(
 ) -> None:
     content = await asyncio.to_thread(input_pdf.read_bytes)
     async with runtime.services() as services:
-        document, _count = await services.documents.upload(input_pdf.name, content)
+        result = await services.documents.upload(input_pdf.name, content)
+        document = result.document
     runtime.settings.mcp_triage_timeout_seconds = 0.04
     writer = await runtime.factory.create()
     try:
@@ -117,7 +118,8 @@ async def test_failed_document_returns_safe_stored_error(
 ) -> None:
     async with runtime.services() as services:
         content = await asyncio.to_thread(input_pdf.read_bytes)
-        document, _count = await services.documents.upload(input_pdf.name, content)
+        result = await services.documents.upload(input_pdf.name, content)
+        document = result.document
         # Arrange through the adapter's transaction, rather than introducing SQL in tools.
         async with services.documents._transaction_context():
             await services.document_repo.update_document_status(

@@ -6,6 +6,8 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
+import structlog
+
 from app.adapters.persistence.worker import LeaseLostError, WorkerPersistence
 from app.core.errors import DocumentError, ErrorCode
 from app.core.models import Block, JobRecord, JobStatus
@@ -17,6 +19,8 @@ from app.core.ports import (
     TranslationCacheRepository,
 )
 from app.worker.keys import translation_key
+
+_logger = structlog.get_logger(__name__)
 
 
 class Assembly:
@@ -49,11 +53,7 @@ class Assembly:
         if document is None:
             raise DocumentError(ErrorCode.RENDER_FAILED)
 
-        status = (
-            JobStatus.DONE
-            if all(block.id in translations for block in blocks)
-            else JobStatus.COMPLETED_WITH_ERRORS
-        )
+        cache_complete = all(block.id in translations for block in blocks)
         output_path: Path | None = None
         try:
             original_path = await self._file_storage.get_upload_path(job.document_id)
@@ -62,13 +62,26 @@ class Assembly:
                 raise DocumentError(ErrorCode.RENDER_FAILED)
             _, renderer = resolved
             output_path = await asyncio.to_thread(_create_temporary_output, original_path.suffix)
-            rendered_path = await renderer.render(
+            result = await renderer.render(
                 original_path,
                 blocks,
                 translations,
                 output_path,
             )
-            content = await asyncio.to_thread(Path.read_bytes, rendered_path)
+            content = await asyncio.to_thread(Path.read_bytes, result.output_path)
+            status = (
+                JobStatus.DONE
+                if cache_complete and not result.degraded_block_ids
+                else JobStatus.COMPLETED_WITH_ERRORS
+            )
+            if result.degraded_block_ids:
+                _logger.warning(
+                    "worker_render_degraded",
+                    job_id=job.id,
+                    document_id=job.document_id,
+                    degraded_block_count=len(result.degraded_block_ids),
+                    degraded_block_ids=result.degraded_block_ids,
+                )
             if job.lease_owner is None:
                 raise LeaseLostError("job execution lease lost")
             async with self._persistence.read():
@@ -77,7 +90,14 @@ class Assembly:
             raise
         except LeaseLostError:
             raise
-        except Exception:
+        except Exception as error:
+            _logger.error(
+                "worker_assembly_failed",
+                stage="render",
+                job_id=job.id,
+                document_id=job.document_id,
+                error_type=type(error).__name__,
+            )
             raise DocumentError(ErrorCode.RENDER_FAILED) from None
         finally:
             if output_path is not None:
@@ -88,7 +108,14 @@ class Assembly:
             await self._file_storage.save_output(job.id, content, document.filename)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            _logger.error(
+                "worker_assembly_failed",
+                stage="save_output",
+                job_id=job.id,
+                document_id=job.document_id,
+                error_type=type(error).__name__,
+            )
             raise DocumentError(ErrorCode.RENDER_FAILED) from None
 
         async with self._persistence.write():

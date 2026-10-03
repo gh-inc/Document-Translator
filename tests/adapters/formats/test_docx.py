@@ -10,6 +10,7 @@ import pytest
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.text.paragraph import Paragraph
+from structlog.testing import capture_logs
 
 from app.adapters.formats import docx as docx_adapter
 from app.core.errors import DocumentError, ErrorCode
@@ -63,6 +64,7 @@ async def test_extractor_returns_nonempty_paragraphs_in_order_with_stable_identi
     assert first.filename == "source.docx"
     assert first.size_bytes == source.stat().st_size
     assert first.page_count is None
+    assert first.warnings == []
     assert [block.seq for block in first.blocks] == [0, 1, 2]
     assert [block.source_text for block in first.blocks] == [
         "Original heading",
@@ -109,7 +111,9 @@ async def test_renderer_replaces_only_translated_top_level_paragraphs(
         output,
     )
 
-    assert rendered == output
+    assert rendered.output_path == output
+    assert rendered.degraded_block_ids == []
+    assert rendered.fallback_blocks == rendered.fallback_pages == 0
     translated = Document(str(output))
     assert translated.paragraphs[1].text == "Translated heading"
     heading_style = translated.paragraphs[1].style
@@ -200,3 +204,27 @@ async def test_renderer_rejects_malformed_adapter_metadata_safely(tmp_path: Path
 
     assert error.value.error_code is ErrorCode.RENDER_FAILED
     assert "paragraph index" not in str(error.value)
+
+
+async def test_renderer_logs_error_class_without_document_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_text = "PRIVATE SOURCE TEXT"
+    translated_text = "PRIVATE TRANSLATED TEXT"
+
+    def fail(*args, **kwargs):
+        raise ValueError(f"{source_text}: {translated_text}")
+
+    monkeypatch.setattr(docx_adapter, "_render_sync", fail)
+    with capture_logs() as logs, pytest.raises(DocumentError) as error:
+        await docx_adapter.DocxRenderer().render(
+            tmp_path / "source.docx", [], {}, tmp_path / "out.docx"
+        )
+
+    assert error.value.error_code is ErrorCode.RENDER_FAILED
+    assert len(logs) == 1
+    assert logs[0]["stage"] == "docx_render"
+    assert logs[0]["error_type"] == "ValueError"
+    assert source_text not in str(logs)
+    assert translated_text not in str(logs)
+    assert "exc_info" not in logs[0]

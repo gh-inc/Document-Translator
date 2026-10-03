@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -24,6 +25,7 @@ from app.core.models import (
     JobError,
     JobRecord,
     JobStatus,
+    RenderResult,
     TranslationPlan,
     TriageAgentOutput,
     TriageStatus,
@@ -49,6 +51,15 @@ PLAN_DATA = {
 
 MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
     (Block, BLOCK_DATA),
+    (
+        RenderResult,
+        {
+            "output_path": Path("/tmp/output.pdf"),
+            "degraded_block_ids": ["block-1"],
+            "fallback_blocks": 2,
+            "fallback_pages": 3,
+        },
+    ),
     (
         DocumentIR,
         {
@@ -237,6 +248,16 @@ def test_document_ir_blocks_default_is_independent_per_instance() -> None:
 
     assert len(first.blocks) == 1
     assert second.blocks == []
+    first.warnings.append("U+1F3DB")
+    assert second.warnings == []
+
+
+def test_render_result_degradation_defaults_are_independent() -> None:
+    first = RenderResult(output_path=Path("one.pdf"))
+    second = RenderResult(output_path=Path("two.pdf"))
+    first.degraded_block_ids.append("block-1")
+    assert second.degraded_block_ids == []
+    assert second.fallback_blocks == second.fallback_pages == 0
 
 
 def test_job_record_glossary_default_is_independent_per_instance() -> None:

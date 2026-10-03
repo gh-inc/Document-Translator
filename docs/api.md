@@ -10,7 +10,11 @@ connection; streaming requests retain their connection until the stream ends.
 ## Upload and translate
 
 1. Upload a PDF or DOCX using multipart field `file` at `POST /api/documents`.
-   Limits are 50 MiB for uploads, 400 PDF pages and 10 MiB of extracted UTF-8 text. The response includes the document ID and block count.
+   Limits are 50 MiB for uploads, 400 PDF pages and 10 MiB of extracted UTF-8 text. The response includes the document ID, block count and `warnings`.
+   PDF glyph warnings identify unsupported Unicode codes without quoting document
+   text. They are advisory: upload proceeds. Warnings are returned on uploads,
+   including duplicate uploads, and are not persisted; readiness and retry-triage
+   responses have an empty `warnings` list. DOCX has no PDF font coverage warning.
    Filenames are sanitized; suffix and signature must agree. Failed ingestion
    rolls back database records and removes the saved upload.
 2. Poll `GET /api/documents/{id}` from the client until `status=extracted`.
@@ -37,7 +41,11 @@ connection; streaming requests retain their connection until the stream ends.
    `GET /api/batches/{id}` returns the batch's jobs.
 5. Download via `GET /api/jobs/{id}/download` when status is `done` or
    `completed_with_errors`. The latter may contain original text for blocks
-   whose translation failed. Other states return 409.
+   whose translation failed or whose translated PDF text contains visible glyphs
+   unavailable in the bundled renderer font. Those PDF blocks retain their
+   original canvas text; supported blocks still receive translations. Nonprinting
+   controls, format characters and Unicode variation selectors are removed from
+   rendered translations while newlines and tabs survive. Other states return 409.
 
 Uploads return `status=analyzing` after extraction, before background triage
 finishes. The agent navigates text with `read_blocks` and `search_blocks` and

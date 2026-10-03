@@ -32,10 +32,13 @@ known billed usage from attempts; an ambiguous provider timeout can still incur
 unreported spend. Reservations use a conservative UTF-8 byte estimate with prompt
 overhead and output expansion allowance, so the cap may stop work early.
 
-The final status comes from cache coverage: all blocks cached means `done`;
-missing translations mean `completed_with_errors` and source-text fallback.
-Rendering/storage failures produce safe `render_failed` errors. Public domain
-models, repository ports, and database schema are unchanged.
+The final status is decided after rendering: all blocks cached and no degraded
+blocks means `done`; missing translations or PDF glyph degradation mean
+`completed_with_errors` with original text retained for those blocks. Renderers
+return `RenderResult` with output path, degraded block IDs and fallback counts.
+Rendering/storage failures produce safe `render_failed` errors. Diagnostics
+include `stage`, `error_type`, job/document IDs and structural details without
+exception messages, tracebacks or document text. The database schema is unchanged.
 
 The default provider is `openai`; configure its key through application Settings.
 Use `LLM_PROVIDER=fake` for offline execution. Tests use FakeProvider exclusively.
