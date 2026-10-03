@@ -138,7 +138,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-92 | 11 | Extract quality metrics, source licensed corpus and measure two-model benchmark | done | db4fc44 |
 
-| DT-93 | 11 | Fail fast on terminal triage failures, configure agent limits, surface analysis cost | done | this commit |
+| DT-93 | 11 | Fail fast on terminal triage failures, configure agent limits, surface analysis cost | done | 3c50295 |
 
 ### MCP download error mapping execution (2026-10-03)
 

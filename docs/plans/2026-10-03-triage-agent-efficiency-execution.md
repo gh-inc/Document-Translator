@@ -78,7 +78,8 @@ its wording remains unchanged, with corrections recorded above.
 
 All seven plan tasks completed. Independent initial and scoped final reviews
 found no blocking issues. Branch `triage-agent-efficiency` preserves the checkout;
-no merge, push or live calls. Implementation commit and token snapshot follow.
+no merge, push or live calls. Implementation commit: `3c50295` —
+`DT-93: fix(triage): bound retries and expose analysis cost`.
 
 
 ## AI usage log
@@ -89,3 +90,29 @@ rejected as described in Rulings. Independent review and a scoped follow-up foun
 no blocking findings; the pricing correction was explicitly recalculated.
 The delivery stages only the new DT-93 PROMPTS entry using a selective index
 patch, preserving earlier user edits in the working tree.
+
+
+## Token accounting
+
+Codex `token_count` checkpoint: 2026-10-03T19:29:01.624882+00:00 after implementation
+commit `3c50295`, before the accounting commit and closing response. Includes
+this root session and its four delegated agent sessions only; no previous tasks
+or translation-provider usage is included. Root telemetry starts with this task,
+so no pre-task baseline subtraction is required.
+
+| Agent | Input | Cached input (included) | Output |
+|---|---:|---:|---:|
+| `/root` | 4,815,462 | 4,711,397 | 12,070 |
+| `/root/cost_api` | 1,192,305 | 1,153,266 | 9,382 |
+| `/root/cost_ui` | 969,702 | 913,608 | 11,062 |
+| `/root/review` | 1,224,696 | 1,114,143 | 3,831 |
+| `/root/triage_backend` | 3,645,028 | 3,548,396 | 18,537 |
+| **Total** | **11,847,193** | **11,440,810** | **54,882** |
+
+Uncached input: 406,383. Output includes 21,225
+reasoning tokens, counted once. Input accumulates reused context across model
+requests, including cached prefixes; it is not unique text or an invoice.
+Final accounting writes/commit and closing-response overhead after this
+checkpoint are excluded because final telemetry cannot be read after the turn
+ends. Reported numbers are measured checkpoint totals, not claimed exact
+end-of-turn billing.
