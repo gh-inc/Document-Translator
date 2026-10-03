@@ -288,3 +288,36 @@ Status: Completed
 OpenAPI Usage:
   Token usage:         160K total  (136K input + 24.6K output)
   Context window:      53% left (128K used / 258K)
+
+---
+
+## Usage accounting notes
+
+The per-stage `OpenAPI Usage` blocks above record **input** and **output**
+tokens only. Two gaps are stated here so the numbers are not read as more
+complete than they are:
+
+1. **Cached input tokens were not captured per stage.** The session log for the
+   8 Codex agent sessions that produced this build records **41,989,427 cached
+   input tokens** in aggregate (≈58% of total spend at gpt-6.1-sol list rates),
+   but the per-stage split was never recorded. Per-stage cached volume therefore
+   cannot be reconstructed from this file, and no attribution has been inferred.
+
+   These figures cover the **Codex sessions only**. Planning and architecture
+   were also driven through **OpenCode Go** (a different tool and provider,
+   Kimi models) and Gemini Pro chat; those are separate channels and are not
+   represented in the per-stage blocks or in the token totals below.
+
+2. **The `Context window … used` figure is a different metric.** It is not
+   `input + output`, and does not reconcile on 8 of the 9 stages (only Stage 2
+   matches, at 121K vs 122.8K). It reflects prompt size in the closing context,
+   not cumulative consumption, so it must not be used to back out cached tokens.
+
+Summing the per-stage blocks gives 1,884K tokens (1,637K input + 245.8K output),
+which is **1.9x** the session log's 992K (855K input + 136.6K output). The two
+sources were maintained separately and were not reconciled; the per-stage
+figures are reliable as a *distribution*, the session log is the only source for
+the cost aggregate.
+
+See [OVERVIEW.md](../../OVERVIEW.md) §13 for the full cost analysis, the
+cross-check, and what is safe to state on defense.
