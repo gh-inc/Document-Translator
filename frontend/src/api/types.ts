@@ -8,6 +8,7 @@ export interface DocumentUploadResponse {
   format: string;
   status: DocumentStatus;
   block_count: number;
+  analysis_cost_usd: number;
 }
 
 export interface CreateJobRequest {

@@ -24,6 +24,22 @@ class Settings(BaseSettings):
         default=0.1, gt=0.0, le=5.0, allow_inf_nan=False
     )
     mcp_triage_timeout_seconds: float = Field(default=45.0, gt=0.0, le=45.0, allow_inf_nan=False)
+    triage_max_turns: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description="Maximum triage agent turns; serial tool calls make this the tool-call cap.",
+    )
+    triage_timeout_seconds: float = Field(
+        default=60.0,
+        gt=0.0,
+        le=300.0,
+        allow_inf_nan=False,
+        description=(
+            "Triage agent timeout. Increasing it does not extend MCP polling, which has its own "
+            "client timeout while background triage continues."
+        ),
+    )
     openai_api_key: SecretStr = SecretStr("")
     openai_model: str = Field(default="gpt-4o-mini", min_length=1)
     llm_provider: Literal["openai", "fake"] = "openai"

@@ -17,6 +17,7 @@ from agents.tool_context import ToolContext
 from agents.usage import Usage
 from openai.types.responses.response_usage import InputTokensDetails
 from pydantic import SecretStr, ValidationError
+from structlog.testing import capture_logs
 
 from app.adapters.llm import triage_agent
 from app.adapters.llm.fake_triage_agent import MAX_TERMS, FakeTriageAgent
@@ -26,17 +27,20 @@ from app.adapters.llm.triage_agent import (
     MAX_READ_BLOCKS,
     MAX_SEARCH_RESULTS,
     MAX_SNIPPET_CHARS,
-    MAX_TOOL_CALLS,
     MAX_TOOL_OUTPUT_CHARS,
     OpenAITriageAgent,
     read_blocks,
     search_blocks,
 )
+from app.adapters.llm.triage_runtime import prepare_triage
+from app.adapters.persistence.database import SqliteConnectionFactory, transaction
+from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.config import Settings
-from app.core.errors import ErrorCode, ProviderError
+from app.core.errors import ErrorCode, ProviderError, TriageTerminalError
 from app.core.models import (
     Block,
     DocumentIR,
+    DocumentStatus,
     TranslationPlan,
     TriageAgentOutput,
     TriageResult,
@@ -142,15 +146,11 @@ def test_installed_sdk_schema_excludes_context_and_metadata() -> None:
         assert "format_metadata" not in json.dumps(tool.params_json_schema)
 
 
-async def test_per_run_navigation_budget_bounds_parallel_or_repeated_calls() -> None:
+async def test_navigation_budget_tracks_successful_reads() -> None:
     budget = triage_agent._NavigationBudget()
     read, _ = triage_agent._navigation_tools(budget)
-    for _ in range(MAX_TOOL_CALLS):
-        await _invoke(read, _document(), start_seq=0, count=1)
-    with pytest.raises(ProviderError) as raised:
-        await _invoke(read, _document(), start_seq=0, count=1)
-    assert raised.value.error_code == ErrorCode.PROVIDER_INVALID_RESPONSE
-    assert budget.successful_reads == MAX_TOOL_CALLS
+    await _invoke(read, _document(), start_seq=0, count=1)
+    assert budget.successful_reads == 1
 
 
 async def test_fake_plan_is_repeatable_and_uses_ordered_unique_capitalized_terms() -> None:
@@ -356,6 +356,64 @@ async def test_openai_returns_aggregated_usage_across_multiple_requests(
         50,
         2,
     )
+
+
+async def test_turn_budget_exhaustion_is_terminal_and_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregate = _aggregated_usage()
+
+    async def run(*args: Any, **kwargs: Any) -> object:
+        kwargs["context"].usage.add(aggregate)
+        raise MaxTurnsExceeded("sensitive run details")
+
+    monkeypatch.setattr(triage_agent.Runner, "run", run)
+    with capture_logs() as logs, pytest.raises(TriageTerminalError) as raised:
+        await OpenAITriageAgent(
+            settings=Settings(openai_model="configured-model"),
+            client=object(),
+            max_turns=1,
+        ).analyze(_document())
+
+    assert raised.value.error_code is ErrorCode.PROVIDER_INVALID_RESPONSE
+    assert raised.value.retryable is True
+    assert raised.value.terminal is True
+    assert raised.value.model == "configured-model"
+    assert (raised.value.tokens_in, raised.value.tokens_out) == (250, 28)
+    assert raised.value.cached_tokens_in == 50
+    assert raised.value.requests == 2
+    assert any(log["event"] == "triage_turn_budget_exhausted" for log in logs)
+
+
+async def test_triage_service_guard_stays_above_configured_agent_timeout(
+    tmp_path: Any,
+) -> None:
+    settings = Settings(
+        database_path=tmp_path / "triage-guard.db",
+        upload_storage_path=tmp_path / "uploads",
+        output_storage_path=tmp_path / "output",
+        llm_provider="fake",
+        triage_timeout_seconds=12.0,
+    )
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repository = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repository.create_document("guard", "guard.pdf", "pdf", 1, "/unused")
+            await repository.create_blocks(
+                "guard",
+                [Block(id="guard-block", seq=0, source_text="Hello", source_hash="hash")],
+            )
+            await repository.update_document_status("guard", DocumentStatus.ANALYZING)
+    finally:
+        await connection.close()
+
+    claim = await prepare_triage("guard", settings)
+    assert claim is not None
+    try:
+        assert claim._service._attempt_timeout_seconds == 17.0
+    finally:
+        await claim.close()
 
 
 async def test_openai_retains_usage_when_runner_fails_after_a_response(

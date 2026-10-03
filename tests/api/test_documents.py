@@ -10,7 +10,7 @@ from app.adapters.persistence.database import SqliteConnectionFactory, transacti
 from app.adapters.persistence.repositories import SqliteDocumentRepository
 from app.api.main import create_app
 from app.config import Settings
-from app.core.models import Block, DocumentStatus
+from app.core.models import Block, DocumentStatus, TranslationPlan, TriageStatus
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
 
@@ -63,6 +63,7 @@ async def test_document_status_returns_persisted_state_and_own_block_count(
             "format": "docx",
             "status": status,
             "block_count": 2,
+            "analysis_cost_usd": 0.0,
             "warnings": [],
         }
         # Reading readiness must not claim or start analysis.
@@ -96,6 +97,7 @@ async def test_document_status_reports_zero_for_no_persisted_blocks(
         "format": "pdf",
         "status": "failed",
         "block_count": 0,
+        "analysis_cost_usd": 0.0,
         "warnings": [],
     }
 
@@ -113,6 +115,73 @@ async def test_unknown_document_status_returns_catalogued_not_found(
         "message": "Requested resource was not found",
         "retryable": False,
     }
+
+
+async def test_document_payload_reports_cumulative_analysis_cost(
+    runtime: tuple[Settings, httpx.AsyncClient],
+) -> None:
+    settings, client = runtime
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repo = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repo.create_document("report", "report.docx", "docx", 20, "/private/report")
+            await repo.create_blocks(
+                "report",
+                [
+                    Block(id="a", seq=0, source_text="First", source_hash="first"),
+                    Block(id="b", seq=1, source_text="Second", source_hash="second"),
+                ],
+            )
+            await repo.save_analysis(
+                "report",
+                TranslationPlan(source_language="en", domain="general", register="neutral"),
+                cost_usd=0.0011,
+                cost_usd_total=0.0034,
+            )
+        response = await client.get("/api/documents/report")
+    finally:
+        await connection.close()
+
+    assert response.status_code == 200
+    assert response.json()["analysis_cost_usd"] == 0.0034
+
+
+async def test_fresh_upload_reports_zero_and_existing_cost_on_duplicate_and_retry(
+    runtime: tuple[Settings, httpx.AsyncClient],
+) -> None:
+    settings, client = runtime
+    content = (SAMPLES / "sample_en.docx").read_bytes()
+    first = await client.post("/api/documents", files={"file": ("report.docx", content)})
+
+    assert first.status_code == 200
+    assert first.json()["analysis_cost_usd"] == 0.0
+
+    connection = await SqliteConnectionFactory(settings.database_path).create()
+    try:
+        repo = SqliteDocumentRepository(connection)
+        async with transaction(connection):
+            await repo.save_analysis(
+                first.json()["id"],
+                TranslationPlan(
+                    source_language="en",
+                    domain="general",
+                    register="neutral",
+                    triage_status=TriageStatus.DEGRADED,
+                ),
+                tokens_in=1,
+                cost_usd=0.0011,
+                cost_usd_total=0.0034,
+            )
+    finally:
+        await connection.close()
+
+    duplicate = await client.post("/api/documents", files={"file": ("report.docx", content)})
+    retry = await client.post(f"/api/documents/{first.json()['id']}/retry-triage")
+
+    assert duplicate.status_code == retry.status_code == 200
+    assert duplicate.json()["analysis_cost_usd"] == 0.0034
+    assert retry.json()["analysis_cost_usd"] == 0.0034
 
 
 async def test_pdf_upload_returns_warnings_for_initial_and_duplicate_uploads_only(
@@ -151,4 +220,5 @@ async def test_clean_pdf_and_docx_rest_uploads_return_empty_warnings(
     response = await client.post("/api/documents", files={"file": (filename, content)})
 
     assert response.status_code == 200
+    assert response.json()["analysis_cost_usd"] == 0.0
     assert response.json()["warnings"] == []

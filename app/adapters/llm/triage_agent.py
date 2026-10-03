@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import openai
+import structlog
 from agents import (
     Agent,
     FunctionTool,
@@ -18,20 +19,19 @@ from agents import (
     Runner,
     function_tool,
 )
-from agents.exceptions import AgentsException
+from agents.exceptions import AgentsException, MaxTurnsExceeded
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from agents.retry import ModelRetrySettings
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.core.errors import ErrorCode, ProviderError
+from app.core.errors import ErrorCode, ProviderError, TriageTerminalError
 from app.core.models import DocumentIR, TriageAgentOutput, TriageResult, TriageStatus
 
 MAX_READ_BLOCKS = 8
 MAX_SEARCH_RESULTS = 8
 MAX_SNIPPET_CHARS = 1000
 MAX_TOOL_OUTPUT_CHARS = 16_000
-MAX_TOOL_CALLS = 16
 DEFAULT_MAX_TURNS = 8
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_KEYWORD_CHARS = 200
@@ -49,16 +49,12 @@ of the classification, with observed sequence references; do not give private
 chain-of-thought or step-by-step deliberation. Return the structured output only.
 """
 
+logger = structlog.get_logger(__name__)
+
 
 @dataclass
 class _NavigationBudget:
-    calls: int = 0
     successful_reads: int = 0
-
-    def consume(self) -> None:
-        if self.calls >= MAX_TOOL_CALLS:
-            raise ProviderError(ErrorCode.PROVIDER_INVALID_RESPONSE)
-        self.calls += 1
 
 
 def _usage_values(usage: Any | None) -> dict[str, int]:
@@ -156,8 +152,6 @@ def _navigation_tools(
             start_seq: First sequence number, inclusive.
             count: Sequence interval length; capped at eight.
         """
-        if budget is not None:
-            budget.consume()
         result = await asyncio.to_thread(_read_source_blocks, context.context, start_seq, count)
         if budget is not None and any(item["source_text"].strip() for item in json.loads(result)):
             budget.successful_reads += 1
@@ -170,8 +164,6 @@ def _navigation_tools(
         Args:
             keyword: Nonempty search text, at most 200 characters.
         """
-        if budget is not None:
-            budget.consume()
         return await asyncio.to_thread(_search_source_blocks, context.context, keyword)
 
     return read_blocks, search_blocks
@@ -252,6 +244,8 @@ class OpenAITriageAgent:
                     # Runner.run's public annotation accepts only TContext, but
                     # its installed normalize helper explicitly passes wrappers through.
                     context=cast(DocumentIR, context_wrapper),
+                    # With parallel_tool_calls=False, max_turns is the single
+                    # cap on tool calls for this run.
                     max_turns=self._max_turns,
                     run_config=RunConfig(tracing_disabled=True, trace_include_sensitive_data=False),
                 )
@@ -270,6 +264,17 @@ class OpenAITriageAgent:
         except ProviderError as error:
             _retain_usage(error, model, context_wrapper.usage)
             raise
+        except MaxTurnsExceeded:
+            logger.warning(
+                "triage_turn_budget_exhausted",
+                model=model,
+                max_turns=self._max_turns,
+            )
+            raise TriageTerminalError(
+                ErrorCode.PROVIDER_INVALID_RESPONSE,
+                **_usage_values(context_wrapper.usage),
+                model=model,
+            ) from None
         except (TimeoutError, openai.APITimeoutError):
             raise _provider_error(
                 ErrorCode.PROVIDER_TIMEOUT, model, context_wrapper.usage

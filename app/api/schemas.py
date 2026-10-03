@@ -11,6 +11,7 @@ class DocumentUploadResponse(BaseModel):
     format: str
     status: DocumentStatus
     block_count: int
+    analysis_cost_usd: float = 0.0
     warnings: list[str] = Field(default_factory=list)
 
 

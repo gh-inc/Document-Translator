@@ -18,12 +18,17 @@ from app.core.services.triage_service import TriageService
 
 logger = structlog.get_logger(__name__)
 AgentFactory = Callable[[Settings], TriageAgent]
+_ATTEMPT_GUARD_MARGIN = 5.0
 
 
 def create_triage_agent(settings: Settings) -> TriageAgent:
     if settings.llm_provider == "fake":
         return FakeTriageAgent(settings=settings)
-    return OpenAITriageAgent(settings=settings)
+    return OpenAITriageAgent(
+        settings=settings,
+        max_turns=settings.triage_max_turns,
+        timeout_seconds=settings.triage_timeout_seconds,
+    )
 
 
 class _LazyAgent:
@@ -101,6 +106,7 @@ async def prepare_triage(
         repository.discard_degraded_analysis,
         claim_analysis=repository.claim_analysis,
         analysis_in_use=repository.has_jobs,
+        attempt_timeout_seconds=settings.triage_timeout_seconds + _ATTEMPT_GUARD_MARGIN,
     )
     claimed = ClaimedTriage(document_id, descriptor, service, agent)
     try:

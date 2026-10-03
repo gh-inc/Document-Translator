@@ -138,6 +138,8 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | DT-92 | 11 | Extract quality metrics, source licensed corpus and measure two-model benchmark | done | db4fc44 |
 
+| DT-93 | 11 | Fail fast on terminal triage failures, configure agent limits, surface analysis cost | done | this commit |
+
 ### MCP download error mapping execution (2026-10-03)
 
 DT-90 fixes the operational download error classification defect. Delegated
@@ -490,3 +492,18 @@ is claimed. Live final chrF: mini 71.3698, 4o 70.8356; both preserve 14/19
 literal tokens. Local providers and fidelity benchmarking remain deferred.
 Unrelated user changes stay excluded from commits.
 See [execution record](docs/plans/2026-10-03-benchmark-matrix-execution.md).
+
+
+### Triage agent efficiency execution (2026-10-03)
+
+DT-93 implements terminal/non-retryable triage fail-fast with retained failed
+usage, validated agent limits and timeout ordering, cumulative document cost in
+REST responses, and one analysis cost line per batch. Three delegated owners
+and an independent reviewer verified the implementation. DT-92 in the source
+plan was already occupied by the benchmark, so this work uses DT-93.
+
+Acceptance: 633 backend tests passed, 2 live tests deselected; 78 frontend tests,
+production build, lint and backend typecheck passed (61 source files). Fake ASGI
+smoke confirmed extraction and non-zero cumulative analysis cost. No live calls
+or push; unrelated user edits remain unstaged. See
+[execution record](docs/plans/2026-10-03-triage-agent-efficiency-execution.md).

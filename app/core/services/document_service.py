@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
-from app.core.models import DocumentRecord, DocumentStatus, TriageStatus
+from app.core.models import DocumentAnalysisRecord, DocumentRecord, DocumentStatus, TriageStatus
 from app.core.ports import DocumentRepository, FileStorage, FormatRegistry
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -34,6 +34,7 @@ class UploadResult(BaseModel):
 
     document: DocumentRecord
     block_count: int
+    analysis_cost_usd: float = 0.0
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -62,13 +63,16 @@ class DocumentService:
         self._analysis_in_use = analysis_in_use
         self._upload_context = upload_context
 
-    async def get_document(self, document_id: str) -> tuple[DocumentRecord, int]:
-        """Return the current document record and its persisted block count."""
+    async def get_document(
+        self, document_id: str
+    ) -> tuple[DocumentRecord, int, DocumentAnalysisRecord | None]:
+        """Return the document, its persisted block count, and analysis record."""
         document = await self._document_repo.get_document(document_id)
         if document is None:
             raise ServiceError(ErrorCode.NOT_FOUND, status_code=404)
         blocks = await self._document_repo.get_blocks(document_id)
-        return document, len(blocks)
+        analysis = await self._document_repo.get_analysis(document_id)
+        return document, len(blocks), analysis
 
     async def upload(self, filename: str, content: bytes) -> UploadResult:
         """Validate and persist an upload, returning adapter warnings without persisting them."""
@@ -104,9 +108,11 @@ class DocumentService:
                 raise DocumentError(ErrorCode.CORRUPT_FILE)
             extractor, _renderer = resolved
             document_ir = await extractor.extract(upload_path, document_id)
+            analysis = await self._document_repo.get_analysis(document_id)
             return UploadResult(
                 document=existing,
                 block_count=len(await self._document_repo.get_blocks(document_id)),
+                analysis_cost_usd=analysis.cost_usd_total if analysis is not None else 0.0,
                 warnings=document_ir.warnings,
             )
         save_task: asyncio.Task[Path] | None = None
@@ -163,7 +169,9 @@ class DocumentService:
             await self._cleanup(document_id)
             raise
 
-    async def retry_triage(self, document_id: str) -> tuple[DocumentRecord, int]:
+    async def retry_triage(
+        self, document_id: str
+    ) -> tuple[DocumentRecord, int, DocumentAnalysisRecord | None]:
         """Explicitly recover analysis without resetting a successful plan."""
         async with self._transaction_context():
             document = await self._document_repo.get_document(document_id)
@@ -182,7 +190,7 @@ class DocumentService:
                 # it must not reset status while another process owns triage.
                 document = document.model_copy(update={"status": DocumentStatus.ANALYZING})
             blocks = await self._document_repo.get_blocks(document_id)
-        return document, len(blocks)
+        return document, len(blocks), analysis
 
     async def _cleanup(self, document_id: str) -> None:
         cleanup_callback = self._cleanup_upload

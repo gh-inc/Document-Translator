@@ -16,7 +16,7 @@ function setup() {
 
 describe('upload page', () => {
   beforeEach(() => {
-    vi.mocked(api.uploadDocument).mockReset().mockResolvedValue({ id: 'doc', filename: 'file.pdf', format: 'pdf', status: 'extracted', block_count: 1 });
+    vi.mocked(api.uploadDocument).mockReset().mockResolvedValue({ id: 'doc', filename: 'file.pdf', format: 'pdf', status: 'extracted', block_count: 1, analysis_cost_usd: 0 });
     vi.mocked(api.createJobs).mockReset().mockResolvedValue({ batch_id: 'batch-123', jobs: [] });
   });
 
@@ -36,7 +36,7 @@ describe('upload page', () => {
   });
 
   it('lets users cancel analysis and choose another document', async () => {
-    vi.mocked(api.uploadDocument).mockResolvedValue({ id: 'doc', filename: 'file.pdf', format: 'pdf', status: 'analyzing', block_count: 0 });
+    vi.mocked(api.uploadDocument).mockResolvedValue({ id: 'doc', filename: 'file.pdf', format: 'pdf', status: 'analyzing', block_count: 0, analysis_cost_usd: 0 });
     setup();
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Analyzing'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

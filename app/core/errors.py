@@ -96,6 +96,8 @@ class ProviderError(Exception):
     execution. Never include raw provider messages in this exception.
     """
 
+    terminal: bool = False
+
     def __init__(
         self,
         error_code: ErrorCode,
@@ -114,3 +116,15 @@ class ProviderError(Exception):
         self.cached_tokens_in = cached_tokens_in
         self.requests = requests
         super().__init__(self.message)
+
+
+class TriageTerminalError(ProviderError):
+    """A provider failure that the triage service must not retry.
+
+    The catalogued ``retryable`` value describes the error code generally;
+    this flag marks a particular triage occurrence as terminal. Turn-budget
+    exhaustion repeats the same prompt and model loop, while the bulk path
+    continues to retry ``PROVIDER_INVALID_RESPONSE`` as usual.
+    """
+
+    terminal: bool = True

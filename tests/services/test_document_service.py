@@ -22,7 +22,7 @@ from app.adapters.storage.filesystem import FilesystemStorage
 from app.api.routers.documents import _read_bounded_upload
 from app.config import Settings
 from app.core.errors import DocumentError, ErrorCode, ServiceError
-from app.core.models import DocumentStatus
+from app.core.models import DocumentStatus, TranslationPlan
 from app.core.services.document_service import DocumentService, UploadResult, sanitize_filename
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
@@ -88,6 +88,7 @@ async def test_upload_persists_document_blocks_without_analysis(
     document = result.document
     block_count = result.block_count
     assert result.warnings == []
+    assert result.analysis_cost_usd == 0.0
     persisted_document = await repository.get_document(document.id)
     blocks = await repository.get_blocks(document.id)
     analysis = await repository.get_analysis(document.id)
@@ -101,6 +102,33 @@ async def test_upload_persists_document_blocks_without_analysis(
     assert block_count > 0
     assert len(blocks) == block_count
     assert analysis is None
+
+
+async def test_document_read_and_duplicate_upload_report_cumulative_analysis_cost(
+    document_context: tuple[DocumentService, SqliteDocumentRepository, FilesystemStorage],
+) -> None:
+    service, repository, _storage = document_context
+    content = await asyncio.to_thread((SAMPLES / "sample_en.docx").read_bytes)
+    first = await service.upload("sample.docx", content)
+    assert first.analysis_cost_usd == 0.0
+
+    async with service._transaction_context():
+        await repository.save_analysis(
+            first.document.id,
+            TranslationPlan(source_language="en", domain="general", register="neutral"),
+            cost_usd=0.0011,
+            cost_usd_total=0.0034,
+        )
+
+    document, block_count, analysis = await service.get_document(first.document.id)
+    duplicate = await service.upload("renamed.docx", content)
+
+    assert document.id == first.document.id
+    assert block_count == first.block_count
+    assert analysis is not None
+    assert analysis.cost_usd == 0.0011
+    assert analysis.cost_usd_total == 0.0034
+    assert duplicate.analysis_cost_usd == 0.0034
 
 
 async def test_pdf_upload_and_duplicate_return_ephemeral_safe_warnings(

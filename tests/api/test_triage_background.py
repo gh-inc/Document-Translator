@@ -19,7 +19,7 @@ from app.adapters.persistence.triage import TriagePersistence
 from app.api.background import run_triage
 from app.api.main import create_app
 from app.config import Settings
-from app.core.errors import ErrorCode, ProviderError
+from app.core.errors import ErrorCode, ProviderError, TriageTerminalError
 from app.core.models import (
     Block,
     DocumentIR,
@@ -34,10 +34,17 @@ SAMPLE = Path(__file__).parents[2] / "samples" / "sample_en.pdf"
 
 
 class ControlledAgent:
-    def __init__(self, *, fail: bool = False, blocked: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        blocked: bool = False,
+        error: Exception | None = None,
+    ) -> None:
         self.calls = 0
         self.closed = False
         self.fail = fail
+        self.error = error
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         if not blocked:
@@ -47,6 +54,8 @@ class ControlledAgent:
         self.calls += 1
         self.started.set()
         await self.release.wait()
+        if self.error is not None:
+            raise self.error
         if self.fail:
             raise RuntimeError("private provider failure")
         return TriageResult(
@@ -257,6 +266,54 @@ async def test_three_failures_publish_degraded_plan_and_allow_jobs(runtime) -> N
         },
     )
     assert response.status_code == 200
+
+
+async def test_non_retryable_failure_stops_once_and_records_usage(runtime) -> None:
+    app, settings, client = runtime
+    error = ProviderError(
+        ErrorCode.PROVIDER_AUTH_ERROR,
+        tokens_in=13,
+        tokens_out=3,
+        model="gpt-4o-mini",
+        cached_tokens_in=5,
+        requests=1,
+    )
+    agent = ControlledAgent(error=error)
+    app.state.triage_agent_factory = lambda _settings: agent
+
+    document_id = (await upload(client)).json()["id"]
+
+    assert agent.calls == 1
+    async with repository(settings) as repo:
+        assert (await repo.get_document(document_id)).status is DocumentStatus.EXTRACTED
+        analysis = await repo.get_analysis(document_id)
+        assert analysis.triage_status is TriageStatus.DEGRADED
+        assert (analysis.tokens_in_total, analysis.tokens_out_total) == (13, 3)
+        assert analysis.cost_usd_total == pytest.approx(0.000003375)
+
+
+async def test_triage_terminal_error_stops_once_and_publishes_degraded_plan(runtime) -> None:
+    app, settings, client = runtime
+    agent = ControlledAgent(
+        error=TriageTerminalError(
+            ErrorCode.PROVIDER_INVALID_RESPONSE,
+            tokens_in=19,
+            tokens_out=4,
+            model="gpt-4o-mini",
+            cached_tokens_in=7,
+            requests=1,
+        )
+    )
+    app.state.triage_agent_factory = lambda _settings: agent
+
+    document_id = (await upload(client)).json()["id"]
+
+    assert agent.calls == 1
+    async with repository(settings) as repo:
+        assert (await repo.get_document(document_id)).status is DocumentStatus.EXTRACTED
+        analysis = await repo.get_analysis(document_id)
+        assert analysis.triage_status is TriageStatus.DEGRADED
+        assert (analysis.tokens_in_total, analysis.tokens_out_total) == (19, 4)
 
 
 def _usage_error(tokens_in: int, tokens_out: int, cached_tokens_in: int) -> ProviderError:

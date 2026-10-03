@@ -806,3 +806,21 @@ test counts and runtime/client outcomes are recorded in
 No public contracts changed. Existing user-written Stage 10 rulings are
 preserved as a separate uncommitted change; this execution entry is the only
 new PROMPTS content included in the delivery commit.
+
+
+## DT-93 — triage efficiency and analysis cost (2026-10-03)
+
+The owner requested orchestration, delegated implementation, verification and
+commit of the triage-efficiency plan. Three agents owned backend limits/retry,
+cumulative document cost and frontend presentation; an independent reviewer
+checked spec and quality across all changes. Root owned integration and docs.
+
+Rejected plan text: checking only the new terminal flag would still retry auth
+failures; triage stops on `not retryable or terminal`. The shared error catalog
+stays unchanged. DT-92 was already occupied, so this delivery uses DT-93.
+Fresh upload cost is zero; duplicate upload and retry preserve recorded totals.
+No invalid-key live call or measured latency savings are claimed. ASGI smoke
+with FakeProvider observed $0.000038775 analysis cost after extraction.
+
+Verification and token telemetry are recorded in
+[DT-93 execution](docs/plans/2026-10-03-triage-agent-efficiency-execution.md).

@@ -196,9 +196,17 @@ class TriageService:
             except Exception as error:
                 if not provider_returned:
                     attempts.append(_usage_from_error(error))
-                logger.warning(
-                    "triage_attempt_failed", document_id=document_id, attempt=attempt + 1
+                terminal = isinstance(error, ProviderError) and (
+                    not error.retryable or error.terminal
                 )
+                logger.warning(
+                    "triage_attempt_failed",
+                    document_id=document_id,
+                    attempt=attempt + 1,
+                    terminal=terminal,
+                )
+                if terminal:
+                    break
                 if attempt < 2:
                     await asyncio.sleep(self._retry_delay_seconds * (2**attempt))
         if plan is None:

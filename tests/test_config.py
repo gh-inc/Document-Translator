@@ -4,6 +4,8 @@ from uuid import UUID
 import pytest
 from pydantic import SecretStr, ValidationError
 
+from app.adapters.llm.triage_agent import OpenAITriageAgent
+from app.adapters.llm.triage_runtime import create_triage_agent
 from app.config import Settings
 
 
@@ -28,6 +30,39 @@ def test_mcp_settings_defaults_environment_and_bounds(monkeypatch) -> None:
     for value in (0, -1, 5.1, float("nan"), float("inf")):
         with pytest.raises(ValidationError):
             Settings(mcp_triage_poll_interval_seconds=value)
+
+
+def test_triage_limits_have_defaults_environment_values_and_bounds(monkeypatch) -> None:
+    for name in ("TRIAGE_MAX_TURNS", "TRIAGE_TIMEOUT_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings()
+    assert settings.triage_max_turns == 8
+    assert settings.triage_timeout_seconds == 60.0
+
+    monkeypatch.setenv("TRIAGE_MAX_TURNS", "3")
+    monkeypatch.setenv("TRIAGE_TIMEOUT_SECONDS", "12")
+    settings = Settings()
+    assert settings.triage_max_turns == 3
+    assert settings.triage_timeout_seconds == 12.0
+
+    for kwargs in (
+        {"triage_max_turns": 0},
+        {"triage_max_turns": 999},
+        {"triage_timeout_seconds": 0.0},
+        {"triage_timeout_seconds": float("inf")},
+        {"triage_timeout_seconds": 300.1},
+    ):
+        with pytest.raises(ValidationError):
+            Settings(**kwargs)
+
+
+def test_triage_agent_factory_applies_configured_limits() -> None:
+    agent = create_triage_agent(Settings(triage_max_turns=3, triage_timeout_seconds=12.0))
+
+    assert isinstance(agent, OpenAITriageAgent)
+    assert agent._max_turns == 3
+    assert agent._timeout_seconds == 12.0
 
 
 def test_settings_have_path_defaults(monkeypatch) -> None:

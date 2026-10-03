@@ -638,3 +638,27 @@ Four model measurement runs recorded $0.05823335 in known service usage estimate
 the final matrix alone totals $0.02925670. These are application estimates,
 not provider invoice totals. Agent build-token accounting remains separate in
 the DT-92 execution record. Local Ollama/GGUF is deferred in Future Work.
+
+
+## 12. Decision record: triage fail-fast limits and visible analysis cost
+
+Non-retryable provider failures stop triage retries immediately. Turn exhaustion
+raises internal `TriageTerminalError`; the shared invalid-response catalog stays
+retryable for bulk translation. Bare injected exceptions retain three attempts.
+Every reported failed-attempt usage remains in cumulative totals, and failure
+still publishes a degraded plan so jobs can proceed.
+
+The agent uses validated `TRIAGE_MAX_TURNS` (default 8, 1–20) and
+`TRIAGE_TIMEOUT_SECONDS` (default 60, finite >0, ≤300). The service adds five
+seconds to the adapter timeout to preserve usage-bearing errors before outer
+cancellation. MCP polling has its own limit. Remove the redundant tool-call cap;
+with parallel calls disabled, the turn budget is the navigation-call bound.
+
+The installed SDK generates per-run prompt cache affinity keys for supported
+models. Existing pricing discounts cached input. Retention is deliberately
+unset for short triage runs; this does not promise cache hits across documents.
+
+Expose persisted `cost_usd_total` as document `analysis_cost_usd`, including
+re-triage spend. Render it once per batch rather than multiplying document
+expense by language jobs. Missing cost must not prevent the batch from rendering.
+The value estimates reported usage and excludes unknown provider charges.

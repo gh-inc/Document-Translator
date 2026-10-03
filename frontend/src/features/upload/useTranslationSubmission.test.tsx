@@ -7,7 +7,7 @@ import type { DocumentUploadResponse } from '../../api/types';
 import { useTranslationSubmission } from './useTranslationSubmission';
 
 vi.mock('../../api/client', () => ({ api: { uploadDocument: vi.fn(), getDocument: vi.fn(), retryTriage: vi.fn(), createJobs: vi.fn() } }));
-const document = (status: DocumentUploadResponse['status'], id = 'doc'): DocumentUploadResponse => ({ id, status, filename: 'file.pdf', format: 'pdf', block_count: 1 });
+const document = (status: DocumentUploadResponse['status'], id = 'doc'): DocumentUploadResponse => ({ id, status, filename: 'file.pdf', format: 'pdf', block_count: 1, analysis_cost_usd: 0 });
 const file = new File(['pdf'], 'file.pdf', { type: 'application/pdf' });
 const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;
 

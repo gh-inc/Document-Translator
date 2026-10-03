@@ -43,6 +43,14 @@ linguists who need computer-assisted translation (CAT) tools and workflows.
 
 ### Where an agent earns its keep
 
+Triage limits are configurable with `TRIAGE_MAX_TURNS` (default 8, range 1–20)
+and `TRIAGE_TIMEOUT_SECONDS` (default 60, finite >0, at most 300 seconds).
+Non-retryable provider errors and exhausted turn budgets immediately publish
+a degraded plan; other failures retain up to three attempts. The service guard
+is five seconds longer than the adapter timeout. MCP polling remains independent.
+Batch pages show cumulative document analysis cost once alongside per-job bulk
+translation costs; these estimate reported usage, not complete provider billing.
+
 The OpenAI Agents SDK is used for triage only. Triage must inspect an unknown
 document whose text can exceed one context window, navigate selected text with
 tools, and make a judgment about domain, register, and terminology that shapes

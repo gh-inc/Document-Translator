@@ -12,8 +12,9 @@ const jobStatuses = ['queued', 'running', 'assembling', 'done', 'completed_with_
 
 const parseDocument: Parser<DocumentUploadResponse> = (value) => {
   if (!record(value) || !text(value.id) || !text(value.filename) || !text(value.format)
-    || !text(value.status) || !documentStatuses.includes(value.status) || !count(value.block_count)) return null;
-  return { id: value.id, filename: value.filename, format: value.format, status: value.status as DocumentUploadResponse['status'], block_count: value.block_count };
+    || !text(value.status) || !documentStatuses.includes(value.status) || !count(value.block_count)
+    || !money(value.analysis_cost_usd)) return null;
+  return { id: value.id, filename: value.filename, format: value.format, status: value.status as DocumentUploadResponse['status'], block_count: value.block_count, analysis_cost_usd: value.analysis_cost_usd };
 };
 
 function parseProgress(value: RecordValue) {

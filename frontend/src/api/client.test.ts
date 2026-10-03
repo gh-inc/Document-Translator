@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, parseServerSentEvent } from './client';
 import { ApiError, getErrorMessage, isAbortError } from './errors';
 
-const documentResponse = { id: 'doc', filename: 'report.pdf', format: 'pdf', status: 'analyzing', block_count: 4 };
+const documentResponse = { id: 'doc', filename: 'report.pdf', format: 'pdf', status: 'analyzing', block_count: 4, analysis_cost_usd: 0 };
 const job = { id: 'job', document_id: 'doc', batch_id: 'batch', target_language: 'de', status: 'running', total_chunks: 4, done_chunks: 1, cache_hit_blocks: 3, cache_miss_blocks: 1, cost_usd: 0.01, error: null };
 const batch = { batch_id: 'batch', jobs: [job] };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -87,6 +87,16 @@ describe('API client', () => {
     await expect(api.listRecentJobs()).rejects.toBeInstanceOf(ApiError);
     vi.stubGlobal('fetch', async () => json({ batch_id: 'batch', jobs: [null] }));
     await expect(api.getBatch('batch')).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it.each([
+    { ...documentResponse, analysis_cost_usd: '0.01' },
+    { ...documentResponse, analysis_cost_usd: -1 },
+    { ...documentResponse, analysis_cost_usd: Number.POSITIVE_INFINITY },
+    { ...documentResponse, analysis_cost_usd: undefined },
+  ])('rejects malformed document analysis cost payloads', async (payload) => {
+    vi.stubGlobal('fetch', async () => json(payload));
+    await expect(api.getDocument('doc')).rejects.toMatchObject({ error_code: 'internal_error', kind: 'invalid_response' });
   });
 
   it('sanitizes persisted job errors as well as request errors', async () => {

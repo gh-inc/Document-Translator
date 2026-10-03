@@ -23,13 +23,14 @@ async def get_document(
     document_service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> DocumentUploadResponse:
     """Read persisted document readiness without scheduling analysis."""
-    document, block_count = await document_service.get_document(document_id)
+    document, block_count, analysis = await document_service.get_document(document_id)
     return DocumentUploadResponse(
         id=document.id,
         filename=document.filename,
         format=document.format,
         status=document.status,
         block_count=block_count,
+        analysis_cost_usd=analysis.cost_usd_total if analysis is not None else 0.0,
     )
 
 
@@ -53,6 +54,7 @@ async def upload_document(
             format=document.format,
             status=document.status,
             block_count=result.block_count,
+            analysis_cost_usd=result.analysis_cost_usd,
             warnings=result.warnings,
         )
     finally:
@@ -67,7 +69,7 @@ async def retry_triage(
     document_service: Annotated[DocumentService, Depends(get_document_service)],
     triage_claims: TriageClaimsDependency,
 ) -> DocumentUploadResponse:
-    document, block_count = await document_service.retry_triage(document_id)
+    document, block_count, analysis = await document_service.retry_triage(document_id)
     await _schedule_triage(request, background_tasks, document, triage_claims)
     return DocumentUploadResponse(
         id=document.id,
@@ -75,6 +77,7 @@ async def retry_triage(
         format=document.format,
         status=document.status,
         block_count=block_count,
+        analysis_cost_usd=analysis.cost_usd_total if analysis is not None else 0.0,
     )
 
 

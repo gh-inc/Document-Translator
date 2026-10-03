@@ -37,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks(); Events.all = []; Events.maxLive = 0; Events.maxPerJob = 0;
   vi.stubGlobal('EventSource', Events);
   vi.mocked(api.getJob).mockResolvedValue(job);
+  vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.pdf', format: 'pdf', status: 'extracted', block_count: 4, analysis_cost_usd: 0 });
 });
 
 describe('job progress', () => {
@@ -259,7 +260,7 @@ describe('job progress', () => {
   it('uses document format for binary downloads with an unspecified MIME type', async () => {
     vi.mocked(api.getJob).mockResolvedValue({ ...job, status: 'done' });
     vi.mocked(api.download).mockResolvedValue(new Blob(['translated']));
-    vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.docx', format: 'docx', status: 'extracted', block_count: 4 });
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.docx', format: 'docx', status: 'extracted', block_count: 4, analysis_cost_usd: 0 });
     const revoke = vi.fn(); vi.stubGlobal('URL', { createObjectURL: () => 'blob:binary', revokeObjectURL: revoke });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { expect(this.download).toMatch(/\.docx$/); });
     render(<JobCard jobId={job.id} />);
@@ -281,7 +282,7 @@ describe('job progress', () => {
 
     view.unmount();
     vi.mocked(api.download).mockResolvedValue(new Blob(['# Übersetzung']));
-    vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.md', format: 'md', status: 'extracted', block_count: 4 });
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.md', format: 'md', status: 'extracted', block_count: 4, analysis_cost_usd: 0 });
     const fallback = render(<JobCard jobId={job.id} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Download translation' }));
     await waitFor(() => expect(api.getDocument).toHaveBeenCalledWith('doc-1', expect.any(AbortSignal)));

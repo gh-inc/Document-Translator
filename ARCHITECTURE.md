@@ -511,6 +511,24 @@ must look inside it with navigation tools (`read_blocks`, `search_blocks`)
 and make a judgment shaping all downstream chunks. Tool calling is real: the agent decides how many samples
 to pull and whether to look again.
 
+Triage ends immediately on a non-retryable `ProviderError` or a
+`TriageTerminalError` after turn-budget exhaustion. The latter retains
+`PROVIDER_INVALID_RESPONSE` and its catalogued `retryable=True`, preserving
+bulk retry behavior. Bare injected exceptions and retryable provider failures
+retain up to three attempts. Known usage from the final failed attempt still
+contributes to cumulative analysis totals before degraded publication.
+
+`TRIAGE_MAX_TURNS` defaults to 8 (1–20); it is the single navigation-call cap
+with parallel tool calls disabled. `TRIAGE_TIMEOUT_SECONDS` defaults to 60
+(finite, >0 and ≤300). The service guard is always five seconds longer so the
+adapter can return usage on timeout. MCP retains its independent polling limit;
+background analysis may continue after that wait ends.
+
+The installed Agents SDK supplies a generated `prompt_cache_key` per run for
+supported models. Cached input receives the existing discounted pricing.
+`prompt_cache_retention` stays unset for these short runs; cache affinity does
+not guarantee a cache hit.
+
 **The agent's output is a persisted, deterministic contract:**
 
 ```
@@ -558,6 +576,11 @@ progress. The client derives its percentage from hits plus misses.
 Errors are structured: `{error_code, message, retryable}` — never bare
 "Something went wrong".
 
+Document responses include `analysis_cost_usd`, the cumulative document
+analysis estimate across retries and re-triages (zero without an analysis row).
+The batch page shows this once above its language jobs; each job cost remains
+bulk translation only. Unknown provider usage is excluded.
+
 Stage 5 implements this surface through core document/job services. Stage 6 uploads
 atomically persist extracted blocks with status `analyzing`, then schedule
 triage with FastAPI BackgroundTasks and a fresh SQLite connection. The agent
@@ -568,7 +591,8 @@ The service prices usage and persists current-plan and cumulative totals;
 per-attempt cost deltas are logged after commit without document text. Logs
 are best effort: a process interruption after commit can leave a durable delta
 without its corresponding log event.
-Three bounded attempts precede a heuristic degraded fallback. Analysis and the
+Up to three bounded attempts precede a heuristic degraded fallback; terminal
+provider failures stop after their first attempt. Analysis and the
 `extracted` transition commit together. Jobs require completed analysis and
 return `409 analysis_pending` while it is unavailable. Explicit retry recovers
 process crashes without adding a schema lease. New uploads use content digest
