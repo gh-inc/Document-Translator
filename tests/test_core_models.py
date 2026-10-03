@@ -57,6 +57,7 @@ MODEL_FIXTURES: tuple[tuple[type[BaseModel], dict[str, object]], ...] = (
         {
             "output_path": Path("/tmp/output.pdf"),
             "degraded_block_ids": ["block-1"],
+            "passthrough_block_ids": ["block-2"],
             "fallback_blocks": 2,
             "fallback_pages": 3,
         },
@@ -268,7 +269,9 @@ def test_render_result_degradation_defaults_are_independent() -> None:
     first = RenderResult(output_path=Path("one.pdf"))
     second = RenderResult(output_path=Path("two.pdf"))
     first.degraded_block_ids.append("block-1")
+    first.passthrough_block_ids.append("block-2")
     assert second.degraded_block_ids == []
+    assert second.passthrough_block_ids == []
     assert second.fallback_blocks == second.fallback_pages == 0
 
 

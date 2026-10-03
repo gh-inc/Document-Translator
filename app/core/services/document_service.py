@@ -19,7 +19,7 @@ from app.core.ports import DocumentRepository, FileStorage, FormatRegistry
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_DOCUMENT_PAGES = 400
 MAX_EXTRACTED_TEXT_BYTES = 10 * 1024 * 1024
-_SUPPORTED_FORMATS = frozenset({"docx", "pdf"})
+_SUPPORTED_FORMATS = frozenset({"docx", "md", "pdf"})
 _SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._ -]")
 
 TransactionContext = Callable[[], AbstractAsyncContextManager[object]]

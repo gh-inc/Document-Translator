@@ -88,6 +88,33 @@ class DelayedFakeProvider(FakeProvider):
         return await super().translate_chunk(request)
 
 
+def test_source_neighbors_ignore_empty_structural_blocks_around_a_chunk() -> None:
+    blocks = [
+        Block(
+            id="empty-before",
+            seq=0,
+            source_text="",
+            source_hash="empty-before",
+            format_metadata={"future": {"opaque": [1, 2]}},
+        ),
+        Block(id="before", seq=1, source_text="previous text", source_hash="before"),
+        Block(id="chunk", seq=2, source_text="translated text", source_hash="chunk"),
+        Block(
+            id="empty-after",
+            seq=3,
+            source_text="",
+            source_hash="empty-after",
+            format_metadata={"unrecognized": object.__name__},
+        ),
+        Block(id="after", seq=4, source_text="following text", source_hash="after"),
+    ]
+
+    before, after = TranslationLoop._source_neighbors([blocks[2]], blocks)
+
+    assert [block.id for block in before] == ["before"]
+    assert [block.id for block in after] == ["after"]
+
+
 @pytest.fixture
 async def worker_fixture(tmp_path: Path) -> AsyncIterator[dict[str, object]]:
     settings = Settings(

@@ -53,7 +53,6 @@ class Assembly:
         if document is None:
             raise DocumentError(ErrorCode.RENDER_FAILED)
 
-        cache_complete = all(block.id in translations for block in blocks)
         output_path: Path | None = None
         try:
             original_path = await self._file_storage.get_upload_path(job.document_id)
@@ -67,6 +66,10 @@ class Assembly:
                 blocks,
                 translations,
                 output_path,
+            )
+            satisfied_ids = set(result.passthrough_block_ids)
+            cache_complete = all(
+                block.id in translations or block.id in satisfied_ids for block in blocks
             )
             content = await asyncio.to_thread(Path.read_bytes, result.output_path)
             status = (

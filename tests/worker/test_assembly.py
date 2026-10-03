@@ -146,6 +146,7 @@ class FakeRenderer:
         self.persistence = persistence
         self.translations: dict[str, str] | None = None
         self.degraded_block_ids: list[str] = []
+        self.passthrough_block_ids: list[str] = []
         self.result_path: Path | None = None
 
     async def render(
@@ -159,7 +160,11 @@ class FakeRenderer:
         self.translations = translations
         rendered_path = self.result_path or output_path
         await asyncio.to_thread(rendered_path.write_bytes, b"rendered document")
-        return RenderResult(output_path=rendered_path, degraded_block_ids=self.degraded_block_ids)
+        return RenderResult(
+            output_path=rendered_path,
+            degraded_block_ids=self.degraded_block_ids,
+            passthrough_block_ids=self.passthrough_block_ids,
+        )
 
 
 class FakeFormatRegistry:
@@ -226,6 +231,18 @@ async def test_assembly_keeps_missing_blocks_as_source_and_marks_partial(
     assert renderer.translations == {"block-1": "Hallo"}
     assert storage.saved[0][1] == b"rendered document"
     assert job_repo.completed == [("job-1", JobStatus.COMPLETED_WITH_ERRORS)]
+
+
+async def test_assembly_counts_renderer_passthrough_blocks_as_satisfied(
+    tmp_path: Path,
+) -> None:
+    assembly, renderer, _, job_repo, _ = _assembly(tmp_path, {"block-1": "Hallo"})
+    renderer.passthrough_block_ids = ["block-2"]
+
+    status = await assembly.render(_job())
+
+    assert status is JobStatus.DONE
+    assert job_repo.completed == [("job-1", JobStatus.DONE)]
 
 
 @pytest.mark.asyncio

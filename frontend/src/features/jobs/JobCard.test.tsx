@@ -259,6 +259,27 @@ describe('job progress', () => {
     expect(api.getDocument).toHaveBeenCalledWith('doc-1', expect.any(AbortSignal));
   });
 
+  it('uses Markdown MIME and document format to name Markdown downloads', async () => {
+    vi.mocked(api.getJob).mockResolvedValue({ ...job, status: 'done' });
+    vi.mocked(api.download).mockResolvedValue(new Blob(['# Übersetzung'], { type: 'text/markdown' }));
+    const create = vi.fn(() => 'blob:markdown'); const revoke = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: revoke });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { expect(this.download).toMatch(/\.md$/); });
+    const view = render(<JobCard jobId={job.id} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Download translation' }));
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:markdown'));
+    expect(click).toHaveBeenCalledOnce();
+
+    view.unmount();
+    vi.mocked(api.download).mockResolvedValue(new Blob(['# Übersetzung']));
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 'doc-1', filename: 'report.md', format: 'md', status: 'extracted', block_count: 4 });
+    const fallback = render(<JobCard jobId={job.id} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Download translation' }));
+    await waitFor(() => expect(api.getDocument).toHaveBeenCalledWith('doc-1', expect.any(AbortSignal)));
+    expect(click).toHaveBeenCalledTimes(2);
+    fallback.unmount();
+  });
+
   it('reloads a batch after a safe error', async () => {
     vi.mocked(api.getBatch).mockRejectedValueOnce(new ApiError('not_found')).mockResolvedValue({ batch_id: 'batch-1', jobs: [] });
     render(<MemoryRouter initialEntries={['/batches/batch-1']}><Routes><Route path="/batches/:batchId" element={<BatchPage />} /></Routes></MemoryRouter>);

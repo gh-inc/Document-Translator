@@ -13,6 +13,7 @@ import pytest
 from aiosqlite import Connection
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
+from app.adapters.formats.markdown import MarkdownExtractor, MarkdownRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
@@ -104,6 +105,7 @@ async def _run_fake_worker(settings: Settings, job_id: str, client: httpx.AsyncC
         registry = FormatRegistry()
         registry.register("pdf", PdfExtractor(), PdfRenderer())
         registry.register("docx", DocxExtractor(), DocxRenderer())
+        registry.register("md", MarkdownExtractor(), MarkdownRenderer())
         loop = ClaimLoop(
             settings,
             SqliteJobExecutionRepository(connection, worker_id=settings.worker_id),
@@ -222,7 +224,7 @@ async def test_recent_jobs_invalid_limit_uses_error_catalog(api_runtime) -> None
 
 @pytest.mark.parametrize(
     ("sample", "expected_signature"),
-    [("sample_en.docx", b"PK\x03\x04"), ("sample_en.pdf", b"%PDF-")],
+    [("sample_en.docx", b"PK\x03\x04"), ("sample_en.pdf", b"%PDF-"), ("sample_en.md", b"# ")],
 )
 async def test_fake_worker_terminal_sse_and_download(
     api_runtime,
@@ -268,6 +270,8 @@ async def test_fake_worker_terminal_sse_and_download(
     assert download.status_code == 200
     assert download.content.startswith(expected_signature)
     assert "attachment" in download.headers.get("content-disposition", "")
+    if sample.endswith(".md"):
+        assert download.headers["content-type"].startswith("text/markdown")
 
     partial = await client.get(f"/api/jobs/{job_id}/download", headers={"Range": "bytes=0-3"})
     assert partial.status_code == 206

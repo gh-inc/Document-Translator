@@ -445,7 +445,12 @@ class TranslationLoop:
     def _source_neighbors(
         chunk_blocks: list[Block], all_blocks: list[Block]
     ) -> tuple[list[Block], list[Block]]:
-        ordered_document = sorted(all_blocks, key=lambda block: block.seq)
+        # Empty structural blocks (for example Markdown merged cells) remain
+        # persisted for rendering, but must not add empty context entries that
+        # change provider token usage for the same translatable text.
+        ordered_document = sorted(
+            (block for block in all_blocks if block.source_text), key=lambda block: block.seq
+        )
         chunk_ids = {block.id for block in chunk_blocks}
         first_seq = min(block.seq for block in chunk_blocks)
         last_seq = max(block.seq for block in chunk_blocks)

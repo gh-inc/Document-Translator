@@ -1,6 +1,6 @@
 # Document Translator
 
-Async PDF/DOCX translation with persisted triage, independent jobs per language,
+Async PDF/DOCX/Markdown translation with persisted triage, independent jobs per language,
 SQLite WAL checkpoints and a translation cache. REST and MCP call the same core
 services; a separate worker translates and renders the original document.
 See [architecture](ARCHITECTURE.md), [REST usage](docs/api.md),
@@ -36,7 +36,7 @@ linguists who need computer-assisted translation (CAT) tools and workflows.
 | Real OpenAI API behind a provider interface | `app/adapters/llm/openai_provider.py`; tests use the fake provider |
 | OpenAI Agents SDK with tool calling | `app/adapters/llm/triage_agent.py` and its navigation tools |
 | MCP usable from Claude Code and Cursor | `app/mcp_server/` and the editor setup below |
-| At least two document formats | PDF and DOCX adapters in `app/adapters/formats/` |
+| At least two document formats | PDF, DOCX and Markdown adapters in `app/adapters/formats/` |
 | Resume translation after `kill -9` | Worker leases and persisted chunk checkpoints in `app/worker/` and persistence adapters; exercised by `scripts/chaos-restart.sh` |
 | Fresh-clone Docker Compose deployment | `Dockerfile`, `docker-compose.yml`, and the CI image build |
 | Required submission documents | `README.md`, `PROMPTS.md`, and `DECISIONS.md` |
@@ -61,7 +61,7 @@ curl -fsS http://localhost:8000/healthz
 curl -fsS http://localhost:8000/readyz
 ```
 
-Open `http://localhost:8000` to upload a PDF or DOCX; MCP listens on
+Open `http://localhost:8000` to upload a PDF, DOCX or Markdown; MCP listens on
 `http://localhost:8001/mcp`. The stack defaults to `LLM_PROVIDER=fake` and
 requires no API key. Three non-root processes share one named `/data` volume;
 only the dedicated `MCP_HOST_SHARED_DIR` is bind-mounted for editor files.
@@ -133,7 +133,7 @@ database/storage/provider settings and run `uv run python -m app.worker`.
 The MCP server is optional for browser use. With `LLM_PROVIDER=fake`, this
 workflow runs offline.
 
-Upload a PDF or DOCX and select target languages. The UI waits for analysis by
+Upload a PDF, DOCX or Markdown and select target languages. The UI waits for analysis by
 polling `GET /api/documents/{id}`; once the document is `extracted`, it submits
 one `POST /api/jobs` request. Readiness polling stops after 60 seconds and offers
 **Retry analysis**, which calls `POST /api/documents/{id}/retry-triage` before

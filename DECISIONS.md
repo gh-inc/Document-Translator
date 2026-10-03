@@ -164,12 +164,45 @@ not survive the round trip.
   preserved by construction, not by reconstruction.
 
 **Consequences.** Format knowledge is fully quarantined in adapter modules;
-the core stays format-agnostic and testable with synthetic blocks; a third
-format is one module + one registry entry. The costs, taken knowingly:
+the core stays format-agnostic and testable with synthetic blocks. Adding a
+format also changes allow-lists, detection, three composition roots and browser
+upload/download behavior (see ARCHITECTURE.md, “Layering & the Document IR”).
+The costs, taken knowingly:
 `format_metadata` is untyped across the core boundary (mitigated by
 per-adapter schemas and per-format contract tests), and renderers depend on
 the original file being available — acceptable on a single shared volume,
 revisited under horizontal scaling (§4).
+
+### Markdown as the third format (2026-10-03)
+
+Markdown headings, paragraphs, bullet/numbered list items, quotes and table
+cells are translated. Supported table rows require both outer pipes; GFM tables
+without outer pipes are outside the supported grammar and are treated as prose.
+Fenced code and supported table separator rows pass through
+unchanged. Markdown tables are translated; DOCX table cells remain outside
+extraction. Inline emphasis travels as text without a styling guarantee;
+reference links, images, HTML blocks and frontmatter parsing remain out of scope.
+The inherited triage policy rejects uploads with zero extracted blocks as
+`corrupt_file`; code-only or blank Markdown therefore cannot enqueue. Fenced
+code passes through when the document also has extracted text or table cells.
+
+Table geometry is reconstructed from adapter-owned metadata. Empty cells keep
+blocks and their positions but never enter chunks, bulk provider calls or the cache.
+An injected service callback asks the adapter to classify persisted blocks,
+so enqueue works in another request/process and after restart. The core never
+reads the metadata. RenderResult reports structural blocks as satisfied, so a
+complete merged-cell table finishes `done`.
+
+Empty-cell bypass preserves bulk translation token usage and cost for the
+same translated content. Triage still receives the full document IR for
+navigation; live triage expense may vary and is not claimed invariant.
+
+The registry validates the Markdown UTF-8 header and rejects NUL bytes;
+PDF/DOCX signature checks are unchanged. A binary file renamed `.md` whose
+header is valid UTF-8 without NUL can pass detection; extraction validates the
+whole text. Literal model-generated pipes and cell newlines are sanitized to
+preserve table geometry. This demonstrates the Opaque Metadata boundary with
+a third native format; it does not introduce a PDF/DOCX-to-Markdown bridge.
 
 ---
 

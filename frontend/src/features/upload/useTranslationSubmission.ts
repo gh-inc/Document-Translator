@@ -91,7 +91,7 @@ export function useTranslationSubmission(onComplete: (batchId: string) => void, 
       clearTimeout(timer);
       if (!isCurrent(run) || !document) return;
       if (document.status === 'failed') {
-        update(run, { phase: 'failed', message: 'Document analysis failed. Choose another readable PDF or DOCX document.' });
+        update(run, { phase: 'failed', message: 'Document analysis failed. Choose another readable PDF, DOCX, or Markdown document.' });
       } else {
         await submit(run, current);
       }

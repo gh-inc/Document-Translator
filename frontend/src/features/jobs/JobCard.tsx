@@ -43,10 +43,17 @@ export default function JobCard({ jobId, initialJob, live = true, showDetailsLin
         }
       } else {
         const blob = await api.download(jobId, controller.signal);
-        let extension = blob.type.includes('wordprocessingml') ? 'docx' : blob.type.includes('pdf') ? 'pdf' : null;
+        let extension = blob.type.includes('wordprocessingml')
+          ? 'docx'
+          : blob.type.includes('pdf')
+            ? 'pdf'
+            : blob.type.includes('markdown') || blob.type === 'text/plain'
+              ? 'md'
+              : null;
         if (!extension) {
           const document = await api.getDocument(job.document_id, controller.signal);
-          extension = document.format.toLowerCase() === 'docx' ? 'docx' : 'pdf';
+          const format = document.format.toLowerCase();
+          extension = format === 'docx' ? 'docx' : format === 'md' ? 'md' : 'pdf';
         }
         if (controller.signal.aborted) return;
         const url = URL.createObjectURL(blob);

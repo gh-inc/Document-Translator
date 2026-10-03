@@ -92,7 +92,7 @@ report the number in DECISIONS.md.
 | 5 | Bulk translation | Plain parallel completions via `LLMProvider` port, **structured per-block output** | Agent loop per chunk: cost, latency, nondeterminism |
 | 6 | MCP transport | FastMCP, streamable-http, own container | stdio: can't run as a compose service reachable from host editors |
 | 7 | Frontend | React + Vite + TS SPA, built to static, served by FastAPI | htmx: weaker signal for a full-stack role |
-| 8 | Formats | PDF (PyMuPDF) + DOCX (python-docx) via the **Opaque Metadata** pattern — the core sees only text + seq | Normalized layout IR: over-engineering; Markdown bridge: fatal layout loss (DECISIONS.md §3) |
+| 8 | Formats | PDF (PyMuPDF) + DOCX (python-docx) + Markdown via the **Opaque Metadata** pattern — the core sees only text + seq | Normalized layout IR: over-engineering; Markdown bridge: fatal layout loss (DECISIONS.md §3) |
 | 9 | Datastore | SQLite WAL on a shared volume | Postgres: extra service, no payoff at this scale (§15) |
 | 10 | Default model | `gpt-4o-mini` (env-configurable) | Flagship by default: cost without measured quality need — full record in DECISIONS.md §2 |
 | 11 | Parallel context | **Source-side only** (plan + glossary + neighboring source blocks) | Previous-chunk *translation* = serial dependency chain, kills parallelism |
@@ -154,7 +154,7 @@ app/
     services/            # TranslationService, JobService, CacheService, PricingService
   adapters/
     llm/                 # openai_provider.py · fake_provider.py · triage_agent.py
-    formats/             # pdf.py (PyMuPDF) · docx.py (python-docx) · registry.py
+    formats/             # pdf.py · docx.py · markdown.py · registry.py
     persistence/         # sqlite repositories · filesystem storage
   api/                   # FastAPI routers, SSE — thin
   mcp_server/            # FastMCP tools — thin
@@ -190,8 +190,35 @@ The contract:
   the **original upload as the canvas** and places translations using
   `format_metadata` — so anything the extractor ignored (images, headers,
   styles) survives by construction.
-- **Adding a format in 10 minutes** = one module implementing both ports +
-  one registry entry. DOCX is the proof the PDF design was not overfit.
+- Markdown is the third supported format. Tables require leading and trailing
+  outer pipes; unpiped GFM tables are outside this adapter's supported grammar.
+  Its table delimiters and padding
+  stay in opaque metadata; model output supplies cell text only. Empty cells
+  remain real blocks for rendering, but adapter-classified IDs bypass chunking,
+  bulk provider calls and the cache. Markdown tables are translated; DOCX tables
+  are not.
+
+Empty-cell bypass preserves bulk translation token usage and cost for the
+same translated content. Triage still receives the full document IR for
+navigation; live triage expense may vary and is not claimed invariant.
+
+Adding a format requires coordinated changes across these touchpoints:
+
+| Touchpoint | Location |
+|---|---|
+| Format allow-list | `app/core/services/document_service.py` |
+| Signature or UTF-8 text detection | `app/adapters/formats/registry.py` |
+| Extractor and renderer | `app/adapters/formats/<format>.py` |
+| REST composition | `app/api/dependencies.py` |
+| MCP composition | `app/mcp_server/runtime.py` |
+| Worker composition | `app/worker/__main__.py` |
+| Browser accept list and MIME validation | `frontend/src/features/upload/UploadForm.tsx` |
+| Download extension inference | `frontend/src/features/jobs/JobCard.tsx` |
+
+The original six-touchpoint audit grouped composition as one entry and omitted
+MCP and worker wiring. Format-specific bypass also needs a service callback,
+renderer completion reporting, tests and documentation. No time estimate is
+claimed.
 
 Core models reject unexpected top-level fields with `ConfigDict(extra="forbid")`.
 This strictness does not apply to nested keys in `Block.format_metadata`, whose
@@ -203,8 +230,8 @@ triage and translation use the separate in-memory `TranslationPlan`.
 `AttemptOutcome` enumerates the persisted attempt outcomes.
 
 Rendering returns the in-memory `RenderResult`: output path, degraded block IDs,
-and fallback block/page counts. `DocumentIR.warnings` and the named service
-`UploadResult` carry extraction warnings to the upload response; these are not
+passthrough block IDs, and fallback block/page counts. `DocumentIR.warnings`
+and the named service `UploadResult` carry extraction warnings to the upload response; these are not
 persistence records and add no database columns.
 
 Rejected alternatives (full rationale in DECISIONS.md §3): a universal
@@ -325,7 +352,8 @@ Chunk:   pending ──claim──► inflight ──all blocks committed──�
 
 ## 6. Pipeline
 
-1. **Upload** — magic bytes (`%PDF-`, `PK\x03\x04`), extension whitelist,
+1. **Upload** — binary magic bytes (`%PDF-`, `PK\x03\x04`) or Markdown
+   UTF-8/NUL validation, extension whitelist,
    size cap 50 MiB, page cap 400, extracted UTF-8 text cap 10 MiB; filename sanitized.
    Stored at `/data/uploads/{document_id}`.
 2. **Extract (once per document)** — file → `list[Block]`; blocks (text +
@@ -751,7 +779,7 @@ reviewer can verify that no hard requirement was silently dropped.
 | Real OpenAI API behind an interface; tests avoid it | `LLMProvider` Protocol with `OpenAIProvider` and `FakeProvider`; `@pytest.mark.live` | §7, §12 |
 | OpenAI Agents SDK with tool calling used where it earns its keep | Triage stage only; output persisted as `TranslationPlan` | §7 |
 | MCP server usable from Claude Code / Cursor | FastMCP streamable-http on `:8001`; README ships exact config | §6, §9 |
-| At least two input formats | PDF + DOCX via the Opaque Metadata pattern | §2, §4, §6.6 |
+| At least two input formats | PDF + DOCX + Markdown via the Opaque Metadata pattern | §2, §4, §6.6 |
 | Frontend free choice | React + Vite + TypeScript SPA served by FastAPI | §7, §10 |
 | `docker compose up --build` works from a fresh clone | Single Docker image, three processes, shared `/data` volume | §3, §16 |
 | `README.md`: architecture, decisions, testing guide | Required deliverable; includes quickstart, testing guide, 3 a.m. runbook | §16 |

@@ -156,6 +156,101 @@ async def test_create_jobs_chunks_whole_blocks_and_normalizes_idempotent_batch(
     assert [int(row[2]) for row in rows] == [0, 1, 0, 1]
 
 
+async def test_fresh_service_resolves_persisted_skip_ids_and_combines_explicit_skips(
+    job_context: dict[str, Any],
+) -> None:
+    connection = job_context["connection"]
+    document_repo = job_context["document_repo"]
+    job_repo = job_context["job_repo"]
+    cache_repo = job_context["cache_repo"]
+    persistence = job_context["persistence"]
+    settings = job_context["settings"]
+    markdown_blocks = [
+        Block(
+            id="md-text",
+            seq=0,
+            source_text="Visible content",
+            source_hash="md-text-hash",
+            format_metadata={"kind": "paragraph"},
+        ),
+        Block(
+            id="md-empty-cell",
+            seq=1,
+            source_text="",
+            source_hash="md-empty-cell-hash",
+            format_metadata={"kind": "table_cell", "skip": True},
+        ),
+        Block(
+            id="md-explicit-skip",
+            seq=2,
+            source_text="Also visible",
+            source_hash="md-explicit-skip-hash",
+            format_metadata={"kind": "paragraph"},
+        ),
+    ]
+    async with transaction(connection):
+        await document_repo.create_document(
+            "md-doc", "source.md", "md", 32, "/uploads/md-doc/source.md"
+        )
+        await document_repo.update_document_status("md-doc", DocumentStatus.EXTRACTED)
+        await document_repo.create_blocks("md-doc", markdown_blocks)
+        await document_repo.save_analysis(
+            "md-doc",
+            TranslationPlan(source_language="en", domain="general", register="neutral"),
+        )
+
+    resolver_calls: list[tuple[str, list[str]]] = []
+
+    async def persisted_markdown_classifier(document, blocks: list[Block]) -> set[str]:
+        resolver_calls.append((document.format, [block.id for block in blocks]))
+        if document.format != "md":
+            return set()
+        return {
+            block.id
+            for block in blocks
+            if block.format_metadata.get("kind") == "table_cell"
+            and block.format_metadata.get("skip") is True
+        }
+
+    # Construct this service after the document and its opaque blocks have
+    # been persisted, as a newly started API process would.
+    fresh_service = JobService(
+        document_repo,
+        job_repo,
+        cache_repo,
+        ModelCostCalculator(),
+        persistence=persistence,
+        settings=settings,
+        skip_block_ids_resolver=persisted_markdown_classifier,
+    )
+    created = await fresh_service.create_jobs(
+        "md-doc", ["de"], "markdown-skip-test", skip_block_ids={"md-explicit-skip"}
+    )
+
+    assert resolver_calls == [("md", ["md-text", "md-empty-cell", "md-explicit-skip"])]
+    assert created[0].total_chunks == 1
+    async with connection.execute(
+        "SELECT chunk_blocks.block_id FROM chunk_blocks "
+        "JOIN chunks ON chunks.id = chunk_blocks.chunk_id "
+        "WHERE chunks.job_id = ? ORDER BY chunk_blocks.seq_in_chunk",
+        (created[0].id,),
+    ) as cursor:
+        linked_ids = [str(row[0]) for row in await cursor.fetchall()]
+    assert linked_ids == ["md-text"]
+
+
+def test_group_blocks_omits_explicitly_skipped_ids() -> None:
+    blocks = [
+        Block(id="a", seq=0, source_text="one", source_hash="a"),
+        Block(id="skip", seq=1, source_text="unused", source_hash="skip"),
+        Block(id="b", seq=2, source_text="two", source_hash="b"),
+    ]
+
+    chunks = JobService._group_blocks(blocks, "gpt-4o-mini", {"skip"})
+
+    assert [[block.id for block in chunk] for chunk in chunks] == [["a", "b"]]
+
+
 async def test_recent_jobs_are_newest_first_with_a_default_limit(
     job_context: dict[str, Any],
 ) -> None:

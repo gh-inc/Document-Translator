@@ -4,13 +4,28 @@ from pathlib import Path
 
 import pytest
 
+from app.adapters.llm.fake_provider import FakeProvider
 from app.adapters.llm.fake_triage_agent import FakeTriageAgent
+from app.adapters.llm.pricing import ModelCostCalculator
 from app.adapters.persistence.database import transaction
+from app.adapters.persistence.repositories import (
+    SqliteDocumentRepository,
+    SqliteJobExecutionRepository,
+    SqliteTranslationCacheRepository,
+)
+from app.adapters.persistence.worker import WorkerPersistence
 from app.core.errors import ErrorCode
 from app.core.models import DocumentStatus, TriageStatus
 from app.mcp_server.runtime import McpRuntime
-from app.mcp_server.schemas import DocumentStatusResult, ToolError, TranslationSubmission
+from app.mcp_server.schemas import (
+    DocumentStatusResult,
+    DownloadResult,
+    JobSummary,
+    ToolError,
+    TranslationSubmission,
+)
 from app.mcp_server.server import McpTools, _read_input
+from app.worker.claim_loop import ClaimLoop
 
 
 async def test_translate_enqueues_after_analysis_and_reuses_duplicate(
@@ -28,6 +43,63 @@ async def test_translate_enqueues_after_analysis_and_reuses_duplicate(
         jobs = await services.jobs.list_recent_jobs()
     assert len(jobs) == 2
     assert {job.target_language for job in jobs} == {"de", "fr"}
+
+
+async def test_markdown_submit_job_and_download_use_fake_worker(
+    runtime: McpRuntime,
+) -> None:
+    input_path = runtime.settings.mcp_shared_dir / "input" / "sample.md"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(
+        input_path.write_text, "# A heading\n\nA short paragraph.\n", encoding="utf-8"
+    )
+    tools = McpTools(runtime)
+
+    submitted = await tools.translate_file(str(input_path), ["de"])
+
+    assert isinstance(submitted, TranslationSubmission)
+    document = await runtime.get_document(submitted.document_id)
+    assert document is not None and document.format == "md"
+    status = await tools.check_status(submitted.job_ids[0])
+    assert isinstance(status, JobSummary) and status.status.value == "queued"
+
+    connection = await runtime.factory.create()
+    stop = asyncio.Event()
+    worker_loop = ClaimLoop(
+        runtime.settings,
+        SqliteJobExecutionRepository(connection, worker_id=runtime.settings.worker_id),
+        SqliteTranslationCacheRepository(connection),
+        SqliteDocumentRepository(connection),
+        FakeProvider(settings=runtime.settings),
+        ModelCostCalculator(),
+        runtime.formats,
+        runtime.storage,
+        persistence=WorkerPersistence(connection),
+        shutdown_event=stop,
+    )
+    worker = asyncio.create_task(worker_loop.run())
+    try:
+        async with asyncio.timeout(5):
+            while True:
+                status = await tools.check_status(submitted.job_ids[0])
+                if isinstance(status, JobSummary) and status.status.value in {
+                    "done",
+                    "completed_with_errors",
+                    "failed",
+                }:
+                    break
+                await asyncio.sleep(0.02)
+        assert isinstance(status, JobSummary) and status.status.value == "done"
+        downloaded = await tools.download_result(submitted.job_ids[0], "output")
+        assert isinstance(downloaded, DownloadResult)
+        artifact = Path(downloaded.path)
+        assert artifact.suffix == ".md"
+        translated = await asyncio.to_thread(artifact.read_text, encoding="utf-8")
+        assert translated.startswith("# ")
+    finally:
+        stop.set()
+        await asyncio.wait_for(worker, timeout=3)
+        await connection.close()
 
 
 async def test_failed_agent_uses_degraded_plan(runtime: McpRuntime, input_pdf: Path) -> None:

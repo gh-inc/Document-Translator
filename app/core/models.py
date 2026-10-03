@@ -72,6 +72,7 @@ class RenderResult(BaseModel):
 
     output_path: Path
     degraded_block_ids: list[str] = Field(default_factory=list)
+    passthrough_block_ids: list[str] = Field(default_factory=list)
     fallback_blocks: int = 0
     fallback_pages: int = 0
 

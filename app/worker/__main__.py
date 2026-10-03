@@ -11,6 +11,7 @@ from contextlib import suppress
 import structlog
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
+from app.adapters.formats.markdown import MarkdownExtractor, MarkdownRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
@@ -60,6 +61,7 @@ async def run_worker(
         formats = FormatRegistry()
         formats.register("pdf", PdfExtractor(), PdfRenderer())
         formats.register("docx", DocxExtractor(), DocxRenderer())
+        formats.register("md", MarkdownExtractor(), MarkdownRenderer())
 
         own_shutdown_event = shutdown_event is None
         stop = shutdown_event if shutdown_event is not None else asyncio.Event()

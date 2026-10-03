@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from app.adapters.formats.registry import FormatRegistry
+from app.core.models import Block
 
 
 def _registry() -> tuple[FormatRegistry, object, object]:
@@ -17,8 +18,11 @@ def _registry() -> tuple[FormatRegistry, object, object]:
     pdf_renderer = object()
     docx_extractor = object()
     docx_renderer = object()
+    markdown_extractor = object()
+    markdown_renderer = object()
     registry.register(".PDF", pdf_extractor, pdf_renderer)  # type: ignore[arg-type]
     registry.register("docx", docx_extractor, docx_renderer)  # type: ignore[arg-type]
+    registry.register("md", markdown_extractor, markdown_renderer)  # type: ignore[arg-type]
     return registry, (pdf_extractor, pdf_renderer), (docx_extractor, docx_renderer)
 
 
@@ -67,6 +71,45 @@ async def test_resolve_rejects_unsupported_or_mismatched_signature(
     assert await registry.resolve(file_path) is None
 
 
+async def test_resolve_accepts_utf8_markdown_and_boundary_codepoint(
+    tmp_path: Path,
+) -> None:
+    registry, _, _ = _registry()
+    file_path = tmp_path / "document.md"
+    # The first byte of "é" is the final byte inspected by detection. The
+    # complete file is valid UTF-8, so the partial header code point is allowed.
+    file_path.write_bytes(b"a" * 2047 + "é".encode() + b"\n")
+
+    assert await registry.resolve(file_path) == registry._adapters["md"]
+
+
+@pytest.mark.parametrize("content", [b"\xffinvalid", b"valid\x00text", b"# truncated \xe2"])
+async def test_resolve_rejects_invalid_utf8_nul_and_truncated_eof(
+    tmp_path: Path, content: bytes
+) -> None:
+    registry, _, _ = _registry()
+    file_path = tmp_path / "document.md"
+    file_path.write_bytes(content)
+
+    assert await registry.resolve(file_path) is None
+
+
+def test_skip_block_ids_dispatches_only_to_registered_markdown_adapter() -> None:
+    class Extractor:
+        def get_skip_block_ids(self, blocks: list[Block]) -> set[str]:
+            assert [block.id for block in blocks] == ["one"]
+            return {"one"}
+
+    registry = FormatRegistry()
+    registry.register("md", Extractor(), object())  # type: ignore[arg-type]
+    blocks = [Block(id="one", seq=0, source_text="", source_hash="empty")]
+
+    assert registry.get_skip_block_ids(".MD", blocks) == {"one"}
+    assert registry.get_skip_block_ids("pdf", blocks) == set()
+    assert registry.get_skip_block_ids("docx", blocks) == set()
+    assert FormatRegistry().get_skip_block_ids("md", blocks) == set()
+
+
 async def test_resolve_returns_none_for_missing_file(tmp_path: Path) -> None:
     registry, _, _ = _registry()
 
@@ -99,6 +142,9 @@ async def test_resolve_reads_at_most_2048_bytes_off_event_loop_thread(
             read_sizes.append(size)
             read_thread_ids.append(threading.get_ident())
             return self._reader.read(size)
+
+        def fileno(self) -> int:
+            return self._reader.fileno()
 
     def tracked_open(path: Path, *args: object, **kwargs: object) -> object:
         reader = original_open(path, *args, **kwargs)

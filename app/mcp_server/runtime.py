@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import structlog
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
+from app.adapters.formats.markdown import MarkdownExtractor, MarkdownRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.pricing import ModelCostCalculator
@@ -30,7 +31,7 @@ from app.adapters.storage.document_locks import document_upload_lock
 from app.adapters.storage.filesystem import FilesystemStorage
 from app.config import Settings
 from app.core.errors import ErrorCode, ServiceError
-from app.core.models import DocumentRecord, DocumentStatus
+from app.core.models import Block, DocumentRecord, DocumentStatus
 from app.core.services.document_service import DocumentService
 from app.core.services.job_service import JobService
 
@@ -60,6 +61,7 @@ class McpRuntime:
         self.formats = FormatRegistry()
         self.formats.register("pdf", PdfExtractor(), PdfRenderer())
         self.formats.register("docx", DocxExtractor(), DocxRenderer())
+        self.formats.register("md", MarkdownExtractor(), MarkdownRenderer())
         self.upload_lock = asyncio.Lock()
         self._triage_tasks: set[asyncio.Task[None]] = set()
         self._triage_claims: dict[asyncio.Task[None], ClaimedTriage] = {}
@@ -84,6 +86,12 @@ class McpRuntime:
         try:
             documents = SqliteDocumentRepository(connection)
             persistence = ApiPersistence(connection)
+
+            async def resolve_skip_block_ids(
+                document: DocumentRecord, blocks: list[Block]
+            ) -> set[str]:
+                return self.formats.get_skip_block_ids(document.format, blocks)
+
             yield Services(
                 documents=DocumentService(
                     documents,
@@ -105,6 +113,7 @@ class McpRuntime:
                     ModelCostCalculator(),
                     persistence=persistence,
                     settings=self.settings,
+                    skip_block_ids_resolver=resolve_skip_block_ids,
                 ),
                 document_repo=documents,
             )

@@ -7,6 +7,7 @@ from aiosqlite import Connection
 from fastapi import Depends, Request
 
 from app.adapters.formats.docx import DocxExtractor, DocxRenderer
+from app.adapters.formats.markdown import MarkdownExtractor, MarkdownRenderer
 from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
@@ -26,6 +27,7 @@ from app.adapters.storage.filesystem import FilesystemStorage
 from app.adapters.storage.readiness import check_storage_writable
 from app.config import Settings
 from app.core.errors import ErrorCode, ServiceError
+from app.core.models import Block, DocumentRecord
 from app.core.ports import LLMProvider
 from app.core.services.document_service import DocumentService
 from app.core.services.health_service import HealthService
@@ -90,6 +92,7 @@ def get_format_registry() -> FormatRegistry:
     registry = FormatRegistry()
     registry.register("pdf", PdfExtractor(), PdfRenderer())
     registry.register("docx", DocxExtractor(), DocxRenderer())
+    registry.register("md", MarkdownExtractor(), MarkdownRenderer())
     return registry
 
 
@@ -139,9 +142,19 @@ def get_job_service(
     cache_repo: Annotated[SqliteTranslationCacheRepository, Depends(get_cache_repo)],
     calculator: Annotated[ModelCostCalculator, Depends(get_cost_calculator)],
     persistence: Annotated[ApiPersistence, Depends(get_api_persistence)],
+    registry: Annotated[FormatRegistry, Depends(get_format_registry)],
 ) -> JobService:
+    async def resolve_skip_block_ids(document: DocumentRecord, blocks: list[Block]) -> set[str]:
+        return registry.get_skip_block_ids(document.format, blocks)
+
     return JobService(
-        document_repo, job_repo, cache_repo, calculator, persistence=persistence, settings=settings
+        document_repo,
+        job_repo,
+        cache_repo,
+        calculator,
+        persistence=persistence,
+        settings=settings,
+        skip_block_ids_resolver=resolve_skip_block_ids,
     )
 
 

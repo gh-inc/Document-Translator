@@ -4,11 +4,15 @@ export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const fileTypes: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  md: 'text/markdown',
 };
+const markdownTypes = new Set(['', 'text/markdown', 'text/plain']);
 export function validateFile(file: File): string | null {
   const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (!Object.hasOwn(fileTypes, extension)) return 'Choose a PDF or DOCX document.';
-  if (file.type !== fileTypes[extension]) return 'The file type must match its PDF or DOCX extension.';
+  if (!Object.hasOwn(fileTypes, extension)) return 'Choose a PDF, DOCX, or Markdown document.';
+  if (extension === 'md' ? !markdownTypes.has(file.type) : file.type !== fileTypes[extension]) {
+    return 'The file type must match its PDF, DOCX, or Markdown extension.';
+  }
   if (file.size > MAX_FILE_BYTES) return 'Document exceeds the 50 MiB upload limit.';
   return null;
 }
@@ -42,7 +46,7 @@ export function UploadForm({ busy, onSubmit }: Props) {
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    if (!file) { setError('Choose a PDF or DOCX document.'); return; }
+    if (!file) { setError('Choose a PDF, DOCX, or Markdown document.'); return; }
     const issue = validateFile(file);
     if (issue) { setError(issue); return; }
     if (!selected.length) { setError('Select at least one target language.'); return; }
@@ -58,12 +62,12 @@ export function UploadForm({ busy, onSubmit }: Props) {
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files); }}
       >
-        <label htmlFor={`${id}-file`} className="mb-3 block font-semibold">PDF or DOCX document</label>
+        <label htmlFor={`${id}-file`} className="mb-3 block font-semibold">PDF, DOCX, or Markdown document</label>
         <p id={`${id}-help`} className="mb-4 text-neutral-300">Drop one document here, or choose a file. Maximum 50 MiB.</p>
         <input
           id={`${id}-file`}
           type="file"
-          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".pdf,.docx,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
           disabled={busy}
           aria-describedby={`${id}-help${error ? ` ${id}-error` : ''}`}
           aria-invalid={!!error}

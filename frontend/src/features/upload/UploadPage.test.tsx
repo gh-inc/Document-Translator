@@ -9,7 +9,7 @@ vi.mock('../../api/client', () => ({ api: { uploadDocument: vi.fn(), getDocument
 function Destination() { return <p>Batch: {useParams().batchId}</p>; }
 function setup() {
   render(<MemoryRouter><Routes><Route path="/" element={<UploadPage />} /><Route path="/batches/:batchId" element={<Destination />} /></Routes></MemoryRouter>);
-  fireEvent.change(screen.getByLabelText('PDF or DOCX document'), { target: { files: [new File(['pdf'], 'file.pdf', { type: 'application/pdf' })] } });
+  fireEvent.change(screen.getByLabelText('PDF, DOCX, or Markdown document'), { target: { files: [new File(['pdf'], 'file.pdf', { type: 'application/pdf' })] } });
   fireEvent.click(screen.getByLabelText('German'));
   fireEvent.click(screen.getByRole('button', { name: 'Translate document' }));
 }

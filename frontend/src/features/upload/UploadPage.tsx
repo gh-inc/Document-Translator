@@ -12,7 +12,7 @@ export default function UploadPage() {
   return (
     <section aria-labelledby="upload-heading" className="max-w-3xl space-y-6">
       <h1 id="upload-heading">Translate a document</h1>
-      <p className="text-neutral-300">Upload a PDF or DOCX and choose your target languages. We analyze the document before starting translation.</p>
+      <p className="text-neutral-300">Upload a PDF, DOCX, or Markdown document and choose your target languages. We analyze the document before starting translation.</p>
       <UploadForm key={formVersion} busy={flow.busy} onSubmit={(file, languages) => void flow.start(file, languages)} />
       <div role="status" aria-live="polite" aria-atomic="true">{flow.message}</div>
       <div className="flex flex-wrap gap-4">

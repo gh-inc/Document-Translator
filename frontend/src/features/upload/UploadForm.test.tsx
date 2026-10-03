@@ -7,9 +7,13 @@ describe('upload form', () => {
   it('validates extension, matching MIME and the 50 MiB boundary', () => {
     expect(validateFile(pdf())).toBeNull();
     expect(validateFile(new File(['docx'], 'sample.DOCX', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))).toBeNull();
-    expect(validateFile(new File(['pdf'], 'sample.txt', { type: 'application/pdf' }))).toContain('PDF or DOCX');
+    expect(validateFile(new File(['pdf'], 'sample.txt', { type: 'application/pdf' }))).toContain('PDF, DOCX, or Markdown');
     expect(validateFile(new File(['pdf'], 'sample.pdf', { type: 'application/zip' }))).toContain('match');
     expect(validateFile(new File(['pdf'], 'sample.pdf'))).toContain('match');
+    expect(validateFile(new File(['markdown'], 'notes.md', { type: 'text/markdown' }))).toBeNull();
+    expect(validateFile(new File(['markdown'], 'notes.MD', { type: 'text/plain' }))).toBeNull();
+    expect(validateFile(new File(['markdown'], 'notes.md'))).toBeNull();
+    expect(validateFile(new File(['markdown'], 'notes.md', { type: 'application/octet-stream' }))).toContain('match');
     const file = pdf();
     Object.defineProperty(file, 'size', { value: MAX_FILE_BYTES, configurable: true });
     expect(validateFile(file)).toBeNull();
@@ -21,9 +25,9 @@ describe('upload form', () => {
     const onSubmit = vi.fn();
     render(<UploadForm busy={false} onSubmit={onSubmit} />);
     fireEvent.click(screen.getByRole('button', { name: 'Translate document' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Choose a PDF or DOCX');
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose a PDF, DOCX, or Markdown');
     const file = pdf();
-    fireEvent.change(screen.getByLabelText('PDF or DOCX document'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('PDF, DOCX, or Markdown document'), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: 'Translate document' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Select at least one');
     fireEvent.click(screen.getByLabelText('German'));
@@ -43,7 +47,7 @@ describe('upload form', () => {
 
   it('disables input and submission while working', () => {
     render(<UploadForm busy onSubmit={vi.fn()} />);
-    expect(screen.getByLabelText('PDF or DOCX document')).toBeDisabled();
+    expect(screen.getByLabelText('PDF, DOCX, or Markdown document')).toBeDisabled();
     expect(screen.getByLabelText('German')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Translate document' })).toBeDisabled();
   });

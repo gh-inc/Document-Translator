@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from typing import Protocol
@@ -18,6 +18,7 @@ from app.core.models import (
     ChunkBlockRecord,
     ChunkRecord,
     ChunkStatus,
+    DocumentRecord,
     DocumentStatus,
     JobRecord,
     JobStatus,
@@ -75,6 +76,9 @@ class JobService:
         persistence: JobServicePersistence,
         settings: Settings,
         model: str | None = None,
+        skip_block_ids_resolver: (
+            Callable[[DocumentRecord, list[Block]], Awaitable[set[str]]] | None
+        ) = None,
     ) -> None:
         self._document_repo = document_repo
         self._job_repo = job_repo
@@ -83,12 +87,14 @@ class JobService:
         self._persistence = persistence
         self._settings = settings
         self._model = model or settings.openai_model
+        self._skip_block_ids_resolver = skip_block_ids_resolver
 
     async def create_jobs(
         self,
         document_id: str,
         target_languages: list[str],
         idempotency_key: str,
+        skip_block_ids: set[str] | None = None,
     ) -> list[JobRecord]:
         """Create one idempotent job per distinct normalized target language."""
         languages = self._normalize_languages(target_languages)
@@ -122,10 +128,16 @@ class JobService:
         if existing_family and {job.target_language for job in existing_family} == set(languages):
             return self._order_jobs(existing_family, languages)
 
+        blocks_to_skip = set(skip_block_ids or ())
+        if self._skip_block_ids_resolver is not None:
+            blocks_to_skip.update(await self._skip_block_ids_resolver(document, blocks))
+
         if not blocks:
             chunks_of_blocks: list[list[Block]] = []
         else:
-            chunks_of_blocks = await asyncio.to_thread(self._group_blocks, blocks, self._model)
+            chunks_of_blocks = await asyncio.to_thread(
+                self._group_blocks, blocks, self._model, blocks_to_skip
+            )
 
         plan = TranslationPlan(
             source_language=analysis.source_language,
@@ -284,7 +296,9 @@ class JobService:
         return languages
 
     @staticmethod
-    def _group_blocks(blocks: Sequence[Block], model: str) -> list[list[Block]]:
+    def _group_blocks(
+        blocks: Sequence[Block], model: str, skip_block_ids: set[str] | None = None
+    ) -> list[list[Block]]:
         import tiktoken
 
         try:
@@ -292,7 +306,10 @@ class JobService:
         except KeyError:
             encoding = tiktoken.get_encoding("o200k_base")
 
-        ordered = sorted(blocks, key=lambda block: block.seq)
+        skipped = skip_block_ids or set()
+        ordered = sorted(
+            (block for block in blocks if block.id not in skipped), key=lambda block: block.seq
+        )
         chunks: list[list[Block]] = []
         current: list[Block] = []
         current_tokens = 0

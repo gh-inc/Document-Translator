@@ -9,7 +9,13 @@ connection; streaming requests retain their connection until the stream ends.
 
 ## Upload and translate
 
-1. Upload a PDF or DOCX using multipart field `file` at `POST /api/documents`.
+Markdown uses the `.md` extension with UTF-8 text. Headings, paragraphs, lists,
+quotes and outer-pipe table rows are translated; fenced code and table separators
+are preserved. Documents containing only code or blank lines have zero extracted
+blocks and fail triage with `corrupt_file`, following the existing empty-document
+policy. Empty table cells remain renderable blocks and bypass bulk translation.
+
+1. Upload a PDF, DOCX or Markdown using multipart field `file` at `POST /api/documents`.
    Limits are 50 MiB for uploads, 400 PDF pages and 10 MiB of extracted UTF-8 text. The response includes the document ID, block count and `warnings`.
    PDF glyph warnings identify unsupported Unicode codes without quoting document
    text. They are advisory: upload proceeds. Warnings are returned on uploads,
