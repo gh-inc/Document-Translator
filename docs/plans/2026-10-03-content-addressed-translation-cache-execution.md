@@ -59,6 +59,34 @@ No live provider comparison was run. `bash -n scripts/chaos-restart.sh` passes;
 its cache joins were updated for source hashes and duplicate paragraph coverage.
 Container chaos was not rerun for this ticket.
 
+## Delivery
+
+Implementation: `3f9fff4` — `DT-91: feat(cache): reuse plan-scoped translations by source hash`.
+Task-hash backfill and token report are delivered in a separate documentation
+commit without amending or rewriting history. The branch is
+`content-addressed-translation-cache`. Pre-existing user edits remain unstaged.
+
 ## Token accounting
 
-Exact agent input/output usage is pending availability of runtime usage metadata; no estimates will be presented as measured usage.
+Measured from Codex session `token_count.info.total_token_usage` at the report
+checkpoint after implementation commit and before this accounting commit,
+2026-10-03T18:58:15.857562+00:00. Includes root and all four delegated
+agent sessions, including resumed turns. Root baseline before this task is zero.
+
+| Agent | Input | Cached input (included) | Output |
+|---|---:|---:|---:|
+| `/root/persistence` | 6,303,557 | 6,200,620 | 16,322 |
+| `/root/review` | 1,789,420 | 1,686,426 | 3,583 |
+| `/root/pipeline` | 8,337,498 | 8,260,287 | 16,293 |
+| `/root/presentation` | 2,298,713 | 2,246,278 | 9,630 |
+| `/root` | 9,646,346 | 9,521,309 | 15,205 |
+| **Total** | **28,375,534** | **27,914,920** | **61,033** |
+
+Uncached input: 460,614. Output already includes
+11,960 reasoning tokens; they are not added twice. Input
+counts accumulate every model request's context, so cached prefixes are counted
+again on subsequent turns; this is token usage, not unique text or a billing
+estimate. The final accounting commit and final response occur after this
+checkpoint and are excluded; a self-referential exact final-response total
+cannot be recorded before that response exists. No provider translation calls
+were made during verification.

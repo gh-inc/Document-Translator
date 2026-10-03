@@ -134,7 +134,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | DT-89 | 11 | Document, review, verify and deliver Markdown support | done | 8f52460 |
 | DT-90 | 11 | Correct MCP download filesystem error mapping and verify delivery | done | 7f2c224 |
 
-| DT-91 | 11 | Content-address translation cache, plan isolation, durable counters and UI | done | pending delivery hash |
+| DT-91 | 11 | Content-address translation cache, plan isolation, durable counters and UI | done | 3f9fff4 |
 
 ### MCP download error mapping execution (2026-10-03)
 
