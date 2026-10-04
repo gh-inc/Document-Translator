@@ -196,12 +196,15 @@ class PdfRenderer:
                 items_by_page.setdefault(page_number, []).append((rectangle, translated_text))
             for page_number, items in items_by_page.items():
                 page = document[page_number]
+                spans = _page_spans(page)
+                protected = protected_by_page.get(page_number, [])
                 for rectangle, _ in items:
-                    # Extracted block bboxes can overlap. Protect retained
-                    # source glyphs even from a neighboring block's redaction.
-                    for redaction in _unprotected_rectangles(
-                        rectangle, protected_by_page.get(page_number, [])
-                    ):
+                    # Extracted block bboxes overlap, so redacting a block's own
+                    # rectangle would also delete the text of any block whose
+                    # glyphs fall inside that bleed. Clip the redaction against
+                    # every span the block does not own, so each span is erased
+                    # exactly when its own block is redacted.
+                    for redaction in _redaction_rectangles(rectangle, spans, protected):
                         page.add_redact_annot(redaction, fill=False, cross_out=False)
                 page.apply_redactions(images=0, graphics=0, text=0)
 
@@ -254,15 +257,44 @@ class PdfRenderer:
             return fallback_count, fallback_pages_count, degraded_block_ids
 
 
-def _unprotected_rectangles(
-    rectangle: pymupdf.Rect, protected: list[pymupdf.Rect]
+def _page_spans(page: pymupdf.Page) -> list[pymupdf.Rect]:
+    """Return every text span on a page as a rectangle."""
+    spans: list[pymupdf.Rect] = []
+    extracted = page.get_text("dict")
+    for block in extracted["blocks"]:
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                rectangle = pymupdf.Rect(span["bbox"])
+                if not rectangle.is_empty:
+                    spans.append(rectangle)
+    return spans
+
+
+def _is_owned_by(span: pymupdf.Rect, rectangle: pymupdf.Rect) -> bool:
+    """Report whether a span belongs to the block rectangle being redacted.
+
+    Ownership is decided per span against one rectangle at a time: a span is the
+    block's own text when the rectangle contains at least 90% of it. Spans of a
+    neighbouring block that merely fall into the bleed of an overlapping
+    rectangle score below the threshold and are therefore treated as foreign.
+    """
+    area = span.get_area()
+    if area <= 0:
+        return False
+    overlap = span & rectangle
+    return not overlap.is_empty and overlap.get_area() >= 0.9 * area
+
+
+def _subtract_rectangles(
+    pieces: list[pymupdf.Rect], regions: list[pymupdf.Rect]
 ) -> list[pymupdf.Rect]:
-    """Subtract retained source regions from a neighboring redaction bbox."""
-    pieces = [rectangle]
-    for retained in protected:
+    """Remove every region from the current redaction pieces."""
+    for region in regions:
         remaining: list[pymupdf.Rect] = []
         for piece in pieces:
-            intersection = piece & retained
+            intersection = piece & region
             if intersection.is_empty:
                 remaining.append(piece)
                 continue
@@ -274,6 +306,32 @@ def _unprotected_rectangles(
             ]
             remaining.extend(candidate for candidate in candidates if not candidate.is_empty)
         pieces = remaining
+        if not pieces:
+            break
+    return pieces
+
+
+def _redaction_rectangles(
+    rectangle: pymupdf.Rect,
+    spans: list[pymupdf.Rect],
+    protected: list[pymupdf.Rect],
+) -> list[pymupdf.Rect]:
+    """Clip a block's redaction against retained source regions.
+
+    A block's own characters lie inside its own spans, so subtracting foreign
+    spans removes exactly the block's own source text and never a neighbour's.
+    `protected` carries whole rectangles for blocks that stay as source because
+    their translation could not be rendered; those need the stronger guarantee
+    DT-77 established, since a synthetic or oversized rectangle can contain
+    their spans entirely.
+    """
+    pieces = _subtract_rectangles([rectangle], protected)
+    for span in spans:
+        if _is_owned_by(span, rectangle):
+            continue
+        pieces = _subtract_rectangles(pieces, [span])
+        if not pieces:
+            break
     return pieces
 
 
