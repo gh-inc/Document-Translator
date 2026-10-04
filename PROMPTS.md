@@ -918,3 +918,20 @@ example environment and current operating docs. Bulk stays gpt-4o-mini; existing
 explicit model overrides and persisted analyses are preserved. Existing default,
 independence and actual-wire tests were reused; no extra live calls or model
 quality claims were needed. A task-only snapshot excludes concurrent MCP changes.
+
+
+## DT-104–DT-107 — PDF layout root cause (2026-10-04)
+
+The owner requested orchestration, delegation, execution and a commit of the
+existing investigation plan. Three delegated owners investigated cache and
+metadata, overflow and unsupported glyphs, and stale extraction with isolated
+worker replay. Root reviewed code, measurements and rendered pages. The plan's
+self-copied cache oracle and byte-equality check were replaced with independently
+seeded expected values and semantic/coordinate/raster comparisons. Read-only
+live evidence contradicted two plan assumptions: fallback already has an adapter
+log event, and the old six-page artifact loses source text. A real cache snapshot
+reproduces 42 appended pages and one degraded glyph block; incomplete cache
+coverage exposes neighboring-redaction source loss. Old DOCX extractions are
+stale, while PDF metadata is intact. No provider calls, live DB writes or
+production fixes were made. Fix/policy selection remains reserved to the owner
+by the source plan. See the execution record for acceptance and token accounting.
