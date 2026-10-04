@@ -137,9 +137,21 @@ describe('translation history', () => {
     expect(lines).toHaveLength(2);
     expect(screen.getByText('shared by 2 translations')).toBeInTheDocument();
     expect(screen.getByText('shared by 1 translation')).toBeInTheDocument();
+    expect(screen.getByLabelText('Document analysis cost, shared by 2 translations')).toBeInTheDocument();
+    expect(screen.getByLabelText('Document analysis cost, shared by 1 translation')).toBeInTheDocument();
     // The French card repeats the document but not the figure.
     const french = screen.getByRole('article', { name: 'Translation to French' });
     expect(within(french).queryByText(/Document analysis/)).not.toBeInTheDocument();
+  });
+
+  it('counts only visible translations when a status filter changes', async () => {
+    vi.mocked(api.listRecentJobs).mockResolvedValue([completed, failed]);
+    renderPage();
+    await screen.findByRole('article', { name: 'Translation to German' });
+    expect(screen.getByLabelText('Document analysis cost, shared by 2 translations')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'failed' } });
+    expect(screen.getByLabelText('Document analysis cost, shared by 1 translation')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Document analysis cost, shared by 2 translations')).not.toBeInTheDocument();
   });
 
   it('hides the analysis line when the document analysis cost is zero', async () => {
@@ -169,6 +181,18 @@ describe('translation history', () => {
     fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'running' } });
     expect(within(screen.getByRole('article')).getByText('Translating')).toBeInTheDocument();
     expect(EventSource).not.toHaveBeenCalled();
+  });
+
+  it('keeps the shared document cost when retry and status responses carry the single-job zero default', async () => {
+    const queued = { ...failed, status: 'queued' as const, error: null, analysis_cost_usd: 0 };
+    const running = { ...queued, status: 'running' as const };
+    vi.mocked(api.listRecentJobs).mockResolvedValue([failed]);
+    vi.mocked(api.retryJob).mockResolvedValue(queued);
+    vi.mocked(api.getJob).mockResolvedValue(running);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry translation' }));
+    await waitFor(() => expect(screen.getByRole('article', { name: 'Translation to Swedish' })).toHaveTextContent('Translating'));
+    expect(screen.getByLabelText('Document analysis cost, shared by 1 translation')).toHaveTextContent('$0.0014');
   });
 
   it('aborts on unmount and ignores a delayed result', async () => {

@@ -9,6 +9,11 @@ const count = (value: unknown): value is number => typeof value === 'number' && 
 const money = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const documentStatuses = ['uploaded', 'analyzing', 'extracted', 'failed'];
 const jobStatuses = ['queued', 'running', 'assembling', 'done', 'completed_with_errors', 'failed'];
+const jobFields = new Set([
+  'id', 'document_id', 'batch_id', 'target_language', 'status', 'total_chunks',
+  'done_chunks', 'cache_hit_blocks', 'cache_miss_blocks', 'cost_usd',
+  'analysis_cost_usd', 'error',
+]);
 
 const parseDocument: Parser<DocumentUploadResponse> = (value) => {
   if (!record(value) || !text(value.id) || !text(value.filename) || !text(value.format)
@@ -28,7 +33,7 @@ function parseProgress(value: RecordValue) {
 
 const parseJob: Parser<JobSummaryResponse> = (value) => {
   if (!record(value) || !text(value.id) || !text(value.document_id) || !text(value.batch_id) || !text(value.target_language)
-    || !money(value.analysis_cost_usd)) return null;
+    || !money(value.analysis_cost_usd) || Object.keys(value).some((field) => !jobFields.has(field))) return null;
   const progress = parseProgress(value);
   return progress ? { id: value.id, document_id: value.document_id, batch_id: value.batch_id, target_language: value.target_language, ...progress, analysis_cost_usd: value.analysis_cost_usd } : null;
 };

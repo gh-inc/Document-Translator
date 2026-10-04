@@ -89,7 +89,7 @@ export default function JobCard({ jobId, initialJob, live = true, showDetailsLin
         <progress className="mt-2 w-full accent-stark-red" aria-label={`Translation progress for ${job.target_language}`} value={job.done_chunks} max={Math.max(job.total_chunks, 1)} />
         <p className="mt-2">Cost: <span>${job.cost_usd.toFixed(4)}</span></p>
         {analysisCostUsd !== null && analysisCostUsd > 0 && (
-          <p className="mt-2 text-neutral-300" aria-label={`Document analysis cost, shared by ${analysisSharedBy} translations`}>
+          <p className="mt-2 text-neutral-300" aria-label={`Document analysis cost, shared by ${analysisSharedBy} ${analysisSharedBy === 1 ? 'translation' : 'translations'}`}>
             Document analysis: <span>${analysisCostUsd.toFixed(4)}</span>
             <span className="block text-sm">shared by {analysisSharedBy} {analysisSharedBy === 1 ? 'translation' : 'translations'}</span>
           </p>

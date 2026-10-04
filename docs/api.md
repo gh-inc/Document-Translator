@@ -141,7 +141,9 @@ never include exception details or persisted diagnostic text.
   translation spend. `analysis_cost_usd` (job summaries only) is the document's
   cumulative triage cost from `document_analyses.cost_usd_total`, **shared by every
   language** translated from that upload and resolved for a page in one batched
-  query. It is a default-zero non-negative integer, absent from SSE and MCP. A
+  query. It is a default-zero finite non-negative USD number, absent from SSE
+  and MCP. Single-job GET/retry responses use the zero default; job-list and
+  batch responses resolve the cumulative value. A
   zero means no usage was recorded; rows that predate instrumentation are
   migrated with zeros and their expense cannot be reconstructed.
 

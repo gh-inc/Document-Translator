@@ -710,3 +710,20 @@ model overrides, terminal exhaustion, 16 turns and public contracts. Existing
 persisted analyses are not regenerated. The observed 5/5 convergence and roughly
 $0.001 mean estimate are small-corpus evidence, not a population quality claim.
 The production estimator still excludes cache-write premiums as documented.
+
+
+## DT-103: shared analysis cost in history
+
+Job-list and batch responses expose `analysis_cost_usd` from the same cumulative
+`document_analyses.cost_usd_total` used by document responses. One parameterized
+lookup resolves all distinct documents in a response; `JobRecord` and the
+database schema remain unchanged. The total includes every recorded triage
+attempt for that document and is shared across languages, separate from each
+job’s bulk `cost_usd`. History shows it once per visible document, with the
+number of visible translations sharing it. Filtering changes that count.
+
+Single-job GET/retry responses retain the default zero and SSE keeps its existing
+shape; history preserves its known shared cost after a retry. REST job parsing
+rejects unknown fields and malformed cost values. Zero is hidden: historical
+analyses predating usage instrumentation have no recorded cost, which does not
+mean their provider calls were free. Unknown usage is excluded from estimates.

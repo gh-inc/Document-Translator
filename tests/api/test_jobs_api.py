@@ -18,7 +18,6 @@ from app.adapters.formats.pdf import PdfExtractor, PdfRenderer
 from app.adapters.formats.registry import FormatRegistry
 from app.adapters.llm.fake_provider import FakeProvider
 from app.adapters.llm.pricing import ModelCostCalculator
-from app.adapters.persistence.api import ApiPersistence
 from app.adapters.persistence.database import SqliteConnectionFactory, transaction
 from app.adapters.persistence.repositories import (
     SqliteDocumentRepository,
@@ -263,38 +262,70 @@ async def test_recent_jobs_report_one_shared_analysis_cost_per_document(
 
 async def test_analysis_cost_resolves_in_one_statement_for_the_whole_list(
     api_runtime,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ten jobs must not cost ten extra queries."""
+    """Trace executed SQL: one cost SELECT for any page size, none for empty."""
     _, _, client = api_runtime
-    document_id = await _upload_analysed(client, "sample_en.pdf")
-    created = await client.post(
-        "/api/jobs",
-        json={
-            "document_id": document_id,
-            "target_languages": ["de", "fr", "es"],
-            "idempotency_key": "batched-analysis-cost",
-        },
-    )
-    assert len(created.json()["jobs"]) == 3
+    statements: list[str] = []
+    original_create = SqliteConnectionFactory.create
 
-    calls: list[list[str]] = []
-    original = ApiPersistence.analysis_costs
+    async def traced_create(factory: SqliteConnectionFactory) -> Connection:
+        connection = await original_create(factory)
+        await connection.set_trace_callback(statements.append)
+        return connection
 
-    async def recording(self, document_ids):  # type: ignore[no-untyped-def]
-        calls.append(list(document_ids))
-        return await original(self, document_ids)
+    monkeypatch.setattr(SqliteConnectionFactory, "create", traced_create)
 
-    ApiPersistence.analysis_costs = recording  # type: ignore[method-assign]
-    try:
-        response = await client.get("/api/jobs?limit=10")
-    finally:
-        ApiPersistence.analysis_costs = original  # type: ignore[method-assign]
+    def cost_selects() -> list[str]:
+        return [
+            sql
+            for sql in statements
+            if "SELECT document_id, cost_usd_total FROM document_analyses" in sql
+        ]
 
+    empty = await client.get("/api/jobs")
+    assert empty.status_code == 200
+    assert empty.json() == []
+    assert cost_selects() == []
+
+    document_ids = [
+        await _upload_analysed(client, "sample_en.pdf"),
+        await _upload_analysed(client, "sample_en.docx"),
+    ]
+    for index, document_id in enumerate(document_ids):
+        created = await client.post(
+            "/api/jobs",
+            json={
+                "document_id": document_id,
+                "target_languages": ["de", "fr", "es"],
+                "idempotency_key": f"batched-analysis-cost-{index}",
+            },
+        )
+        assert created.status_code == 200
+        assert len(created.json()["jobs"]) == 3
+
+    statements.clear()
+    response = await client.get("/api/jobs?limit=10")
     assert response.status_code == 200
-    assert len(calls) == 1, f"expected one batched lookup, saw {len(calls)}"
-    # The batch carries distinct documents, not one entry per job.
-    assert len(calls[0]) == len(set(calls[0]))
-    assert len(response.json()) > len(calls[0])
+    assert len(response.json()) == 6
+    assert {job["document_id"] for job in response.json()} == set(document_ids)
+    assert len(cost_selects()) == 1
+
+    statements.clear()
+    limited = await client.get("/api/jobs?limit=1")
+    assert limited.status_code == 200
+    assert len(limited.json()) == 1
+    assert len(cost_selects()) == 1
+
+    statements.clear()
+    batch_id = response.json()[0]["batch_id"]
+    batch = await client.get(f"/api/batches/{batch_id}")
+    assert batch.status_code == 200
+    assert len(batch.json()["jobs"]) == 3
+    assert {job["analysis_cost_usd"] for job in batch.json()["jobs"]} == {
+        response.json()[0]["analysis_cost_usd"]
+    }
+    assert len(cost_selects()) == 1
 
 
 async def test_recent_jobs_returns_bounded_safe_summaries(api_runtime) -> None:

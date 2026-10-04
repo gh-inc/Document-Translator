@@ -1,6 +1,6 @@
 """Pydantic request and response contracts for the REST API."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.models import DocumentStatus, JobError, JobStatus
 
@@ -22,6 +22,8 @@ class CreateJobRequest(BaseModel):
 
 
 class JobSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     document_id: str
     batch_id: str
@@ -34,7 +36,7 @@ class JobSummaryResponse(BaseModel):
     cost_usd: float
     #: Cumulative triage cost of the document, shared by every language. Zero
     #: means no usage was recorded, which is not the same as a free analysis.
-    analysis_cost_usd: float = Field(default=0.0, ge=0.0)
+    analysis_cost_usd: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     error: JobError | None
 
 

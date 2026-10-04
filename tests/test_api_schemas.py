@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pytest
@@ -116,8 +117,8 @@ def test_cache_counts_default_to_zero_and_reject_negative_values(field: str) -> 
         JobSummaryResponse.model_validate({**job.model_dump(), field: -1})
 
 
-def test_analysis_cost_defaults_to_zero_and_rejects_negative_values() -> None:
-    """The shared analysis cost is optional at the call site, never negative."""
+def test_analysis_cost_defaults_to_zero_and_rejects_invalid_values() -> None:
+    """Shared analysis cost is optional at the call site and finite/nonnegative."""
     job = JobSummaryResponse(
         id="job-1",
         document_id="document-1",
@@ -130,8 +131,11 @@ def test_analysis_cost_defaults_to_zero_and_rejects_negative_values() -> None:
         error=None,
     )
     assert job.analysis_cost_usd == 0.0
+    for invalid in (-0.0001, math.inf, -math.inf, math.nan):
+        with pytest.raises(ValidationError):
+            JobSummaryResponse.model_validate({**job.model_dump(), "analysis_cost_usd": invalid})
     with pytest.raises(ValidationError):
-        JobSummaryResponse.model_validate({**job.model_dump(), "analysis_cost_usd": -0.0001})
+        JobSummaryResponse.model_validate({**job.model_dump(), "unexpected": "value"})
     assert JobSummaryResponse.model_validate(
         {**job.model_dump(), "analysis_cost_usd": 0.0014}
     ).analysis_cost_usd == pytest.approx(0.0014)

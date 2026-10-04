@@ -73,9 +73,16 @@ describe('API client', () => {
     await expect(api.getJob('job')).rejects.toMatchObject({ error_code: 'internal_error', message: 'Internal server error' });
   });
 
-  it.each([null, {}, { ...job, status: 'mystery' }, { ...job, status: { toString: 'private' } }, { ...job, done_chunks: '1' }, { ...job, cache_hit_blocks: '12' }, { ...job, cache_miss_blocks: -1 }, { ...job, cache_hit_blocks: Number.MAX_SAFE_INTEGER + 1 }, { ...job, error: { error_code: 'scanned_pdf' } }, { ...job, analysis_cost_usd: '0.0014' }, { ...job, analysis_cost_usd: -1 }, { ...job, analysis_cost_usd: Number.POSITIVE_INFINITY }, { ...job, analysis_cost_usd: undefined }])('rejects malformed successful job payloads', async (payload) => {
+  it.each([null, {}, { ...job, status: 'mystery' }, { ...job, status: { toString: 'private' } }, { ...job, done_chunks: '1' }, { ...job, cache_hit_blocks: '12' }, { ...job, cache_miss_blocks: -1 }, { ...job, cache_hit_blocks: Number.MAX_SAFE_INTEGER + 1 }, { ...job, error: { error_code: 'scanned_pdf' } }, { ...job, analysis_cost_usd: '0.0014' }, { ...job, analysis_cost_usd: -1 }, { ...job, analysis_cost_usd: Number.POSITIVE_INFINITY }, { ...job, analysis_cost_usd: undefined }, { ...job, unexpected: 'private' }])('rejects malformed successful job payloads', async (payload) => {
     vi.stubGlobal('fetch', async () => json(payload));
     await expect(api.getJob('job')).rejects.toMatchObject({ error_code: 'internal_error', kind: 'invalid_response' });
+  });
+
+  it('rejects unknown job fields in batch and history responses', async () => {
+    vi.stubGlobal('fetch', async () => json({ ...batch, jobs: [{ ...job, unexpected: true }] }));
+    await expect(api.getBatch('batch')).rejects.toMatchObject({ kind: 'invalid_response' });
+    vi.stubGlobal('fetch', async () => json([{ ...job, unexpected: true }]));
+    await expect(api.listRecentJobs()).rejects.toMatchObject({ kind: 'invalid_response' });
   });
 
   it('rejects invalid JSON and malformed document and list responses', async () => {
@@ -144,6 +151,7 @@ describe('API client', () => {
   it('validates SSE JSON and sanitizes its errors', () => {
     const event = { job_id: 'job', event: 'progress', status: 'running', done_chunks: 1, total_chunks: 4, cache_hit_blocks: 3, cache_miss_blocks: 1, cost_usd: 0.01, error: null };
     expect(parseServerSentEvent(JSON.stringify(event))).toEqual(event);
+    expect(parseServerSentEvent(JSON.stringify({ ...event, analysis_cost_usd: 0.0014 }))).toEqual(event);
     expect(parseServerSentEvent('raw exception')).toBeNull();
     expect(parseServerSentEvent(JSON.stringify({ ...event, status: 'unknown' }))).toBeNull();
     expect(parseServerSentEvent(JSON.stringify({ ...event, cache_hit_blocks: '3' }))).toBeNull();

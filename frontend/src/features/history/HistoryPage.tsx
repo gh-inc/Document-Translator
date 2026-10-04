@@ -21,7 +21,13 @@ export default function HistoryPage() {
   const [status, setStatus] = useState<JobStatus | 'all'>('all');
   const [revision, setRevision] = useState(0);
   const updateJob = useCallback((updatedJob: JobSummaryResponse) => {
-    setJobs((current) => current.map((job) => job.id === updatedJob.id ? updatedJob : job));
+    setJobs((current) => current.map((job) => {
+      if (job.id !== updatedJob.id) return job;
+      // Single-job retry/status responses use a zero default for this document-level cost.
+      return job.document_id === updatedJob.document_id && updatedJob.analysis_cost_usd === 0
+        ? { ...updatedJob, analysis_cost_usd: job.analysis_cost_usd }
+        : updatedJob;
+    }));
   }, []);
 
   useEffect(() => {

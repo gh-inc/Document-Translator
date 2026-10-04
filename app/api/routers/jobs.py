@@ -171,11 +171,16 @@ async def download_job(
 async def get_batch(
     batch_id: str,
     service: Annotated[JobService, Depends(get_job_service)],
+    persistence: Annotated[ApiPersistence, Depends(get_api_persistence)],
 ) -> BatchResponse:
     jobs = await service.get_jobs_by_batch(batch_id)
     if not jobs:
         raise ServiceError(ErrorCode.NOT_FOUND, status_code=404)
-    return BatchResponse(batch_id=batch_id, jobs=[_summary(job) for job in jobs])
+    costs = await persistence.analysis_costs({job.document_id for job in jobs})
+    return BatchResponse(
+        batch_id=batch_id,
+        jobs=[_summary(job, costs.get(job.document_id, 0.0)) for job in jobs],
+    )
 
 
 def _summary(job: JobRecord, analysis_cost_usd: float = 0.0) -> JobSummaryResponse:

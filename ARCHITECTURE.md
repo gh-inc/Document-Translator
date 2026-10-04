@@ -585,22 +585,26 @@ these terms; it is one of the brief's explicit questions.
 | `GET /api/jobs?limit=10` | recent jobs, newest first (limit bounded by the service); each carries its own bulk `cost_usd` plus the document's shared `analysis_cost_usd` |
 | `GET /api/jobs/{id}` | status, progress, cost, structured error |
 | `POST /api/jobs/{id}/retry` | re-queue failed chunks (optional raised cost cap) |
-
-Job payloads carry two distinct cost figures. `cost_usd` is the job's own bulk
-translation spend. `analysis_cost_usd` is the document's cumulative triage cost
-from `document_analyses.cost_usd_total`, resolved for a whole page in one batched
-query and **shared by every language** translated from that upload. It is absent
-from `JobRecord`, which mirrors the `jobs` table one-to-one, and the history view
-renders it once per document rather than per card. A zero means no usage was
-recorded; for documents analysed before instrumentation that is not the same as a
-free analysis.
-
 | `GET /api/jobs/{id}/events` | SSE progress stream |
 | `GET /api/jobs/{id}/download` | translated file |
 | `GET /api/batches/{id}` | all jobs of a multi-language batch |
 | `GET /healthz` | liveness: process is up |
 | `GET /readyz` | readiness: DB reachable, storage writable, no stale inflight chunk leases |
 | `GET /metrics` | Prometheus |
+
+Job payloads carry two distinct cost figures. `cost_usd` is the job's own bulk
+translation spend. `analysis_cost_usd` is the document's cumulative triage cost
+from `document_analyses.cost_usd_total`, resolved for a whole page in one batched
+query on job-list and batch responses and **shared by every language**
+translated from that upload. It is absent
+from `JobRecord`, which mirrors the `jobs` table one-to-one, and the history view
+renders it once per document rather than per card. A zero means no usage was
+recorded; for documents analysed before instrumentation that is not the same as a
+free analysis.
+
+Single-job GET/retry responses use the default `0.0` for this shared field;
+SSE progress does not carry it. History retains the known document cost through
+a retry and counts only translations visible under its current status filter.
 
 Job summaries and SSE progress include default-zero `cache_hit_blocks` and
 `cache_miss_blocks`, cumulative lookup counts in blocks, separate from chunk

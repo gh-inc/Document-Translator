@@ -107,3 +107,20 @@ so an in-flight job can finish as `completed_with_errors`, retaining source text
 for those missing translations. Use the normal Retry action to requeue these
 cache misses and retranslate them after the upgrade. Existing completed output
 files remain available.
+
+
+## Analysis cost in history
+
+`GET /api/jobs` and batch responses carry `analysis_cost_usd`, sourced from
+`document_analyses.cost_usd_total`, the cumulative estimate across recorded
+triage attempts for a document. It is shared by all its language jobs; adding
+that field across job rows would count the same expense repeatedly. Each job’s
+`cost_usd` remains bulk translation only. History displays the analysis line
+once per document in the visible results and labels the visible shared count.
+The status filter may reduce that count; it does not reduce the document cost.
+
+Zero costs are hidden. For older analyses created before usage instrumentation,
+zero means cost was not recorded, not that analysis was free. Unknown provider
+usage remains excluded. Single-job GET/retry summaries use default zero for the
+shared field, while history retains a previously loaded cost through Retry.
+SSE carries bulk progress and does not include the document analysis field.
