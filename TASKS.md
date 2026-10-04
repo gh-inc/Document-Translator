@@ -41,7 +41,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
 | DT-109 | 11 | Record PDF renderer linearity limits and fallback observability gap | done | 9722a69 |
-| DT-108 | 11 | Protect untranslated PDF source blocks from overlapping translated-block redactions (confirmed by DT-105 probe) | todo | — |
+| DT-108 | 11 | Protect untranslated PDF source blocks from overlapping translated-block redactions (confirmed by DT-105 probe) | done | b84a4dc |
 | DT-107 | 11 | PDF layout root cause: evidence review, acceptance and delivery | done | 13b8b7b |
 | DT-106 | 11 | PDF layout root cause: stale extraction and isolated worker reproduction | done | 13b8b7b |
 | DT-105 | 11 | PDF layout root cause: overflow, degraded glyphs and model evidence | done | 13b8b7b |
