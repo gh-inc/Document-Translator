@@ -41,10 +41,10 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
 | DT-108 | 11 | Protect untranslated PDF source blocks from overlapping translated-block redactions (confirmed by DT-105 probe) | todo | — |
-| DT-104 | 11 | PDF layout root cause: cache mapping and metadata round-trip probes | done | delivery commit; backfill follows |
-| DT-105 | 11 | PDF layout root cause: overflow, degraded glyphs and model evidence | done | delivery commit; backfill follows |
-| DT-106 | 11 | PDF layout root cause: stale extraction and isolated worker reproduction | done | delivery commit; backfill follows |
-| DT-107 | 11 | PDF layout root cause: evidence review, acceptance and delivery | done | delivery commit; backfill follows |
+| DT-104 | 11 | PDF layout root cause: cache mapping and metadata round-trip probes | done | 13b8b7b |
+| DT-105 | 11 | PDF layout root cause: overflow, degraded glyphs and model evidence | done | 13b8b7b |
+| DT-106 | 11 | PDF layout root cause: stale extraction and isolated worker reproduction | done | 13b8b7b |
+| DT-107 | 11 | PDF layout root cause: evidence review, acceptance and delivery | done | 13b8b7b |
 | DT-103 | 11 | Shared document analysis cost in history: backend/frontend audit, regression coverage and acceptance | done | 42fd33c, 26c64b4, 30735de, ea83c1e |
 | DT-101 | 11 | MCP shared-directory permissions: preflight, terminal errors, read-only doctor and acceptance | done | 3aefe66, 04d96ac, f379293, dd3bc2c, 41a68fe, d464c8d |
 | DT-1 | 0 | Establish git conventions and task backlog | done | 8590e81, this fix |

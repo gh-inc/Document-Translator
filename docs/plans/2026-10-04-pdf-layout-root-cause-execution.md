@@ -121,3 +121,26 @@ Final acceptance: `make test` **712 passed, 2 live deselected**;
 `make lint` clean (**187 files**); `make typecheck` clean (**61 source files**).
 Six pre-existing Pydantic warnings remain. Log: `/tmp/dt107-test-final.log`.
 No deployment, push or production data mutation was performed.
+
+
+## Delivery and agent token accounting
+
+Investigation/probe delivery commit: `13b8b7b` on
+`dt-104-pdf-layout-investigation`. This documentation follow-up backfills the
+task hashes and usage checkpoint; no amend, rebase or push.
+
+Local `token_count` records across root and three delegated sessions, sampled
+after the delivery commit: **input 27,638,135; output
+110,371**. Input includes **27,089,520 cached
+tokens** and repeated context across model turns; output is the recorder's
+output total, including reasoning. This is token usage, not a provider billing
+estimate. It excludes the subsequent hash-backfill/usage-commit/final-report
+turns, whose usage cannot be included in a report written before they finish.
+Raw checkpoint: `/tmp/dt107-token-checkpoint.json`.
+
+| Session | Input | Output |
+| --- | ---: | ---: |
+| 01a1047e-c593-7d71-89da-1916b0670037 | 7,595,644 | 12,761 |
+| 01a10483-0bc1-7152-a4cf-baa693e14724 | 6,769,137 | 24,373 |
+| 01a10483-1c70-75a2-b057-f0e2b393870d | 4,996,538 | 32,887 |
+| 01a10483-2b57-7b62-8342-cf80e96d8284 | 8,276,816 | 40,350 |
