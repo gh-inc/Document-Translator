@@ -242,12 +242,33 @@ impact at the end of implementation:
 
 - OCR for scanned PDFs (rejected with a clear `scanned_pdf` error instead)
 - Pixel-perfect PDF layout (text-oriented fidelity only, ARCHITECTURE.md §6.6)
+- Non-linear PDF layout: the renderer assumes a linear text flow, so
+  multi-column and table-like layouts may break into artifacts when translated
+  text changes length
 - Horizontal worker scaling (single worker + bounded async concurrency; no
   multi-worker scaling comparison was measured, and none is claimed)
 - Auth / multi-tenancy
 - Glossary editing UI (triage glossary is automatic)
 - Sequential polish pass with translated context
 - Side-by-side preview / in-place editing
+
+Measured impact (2026-10-04, `samples/platon-gliph.pdf`, ru→en, 70 blocks):
+extraction produces one ordered list of rectangular text blocks via
+`page.get_text("blocks", sort=True)`; the PDF adapter has no table or column
+model at all. Each block is re-inserted into its own source rectangle, and when
+the translation does not fit the font shrinks to a 6 pt floor before the block
+is moved onto an appended page. On this sample 42 of 70 blocks (60%) exceeded
+their rectangles at that floor, so a 3-page input rendered as 45 pages.
+Multi-column reading order therefore follows PyMuPDF's sort heuristic rather
+than detected columns, and table-like rows and cells are independent rectangles
+whose alignment is not preserved when a translated cell changes height. Nested
+tables are not recursed into. Rewriting the renderer as a layout-aware engine
+was deliberately not attempted.
+
+The fallback counters that would expose this are currently invisible:
+`RenderResult.fallback_blocks` and `fallback_pages` are computed in `pdf.py` and
+read nowhere else, so neither the API nor the logs report how much text was
+moved off its original layout.
 
 ---
 
