@@ -748,3 +748,28 @@ shape; history preserves its known shared cost after a retry. REST job parsing
 rejects unknown fields and malformed cost values. Zero is hidden: historical
 analyses predating usage instrumentation have no recorded cost, which does not
 mean their provider calls were free. Unknown usage is excluded from estimates.
+
+## DT-110: accepted MVP limitation — triage ownership is event-driven
+
+Document analysis runs in `BackgroundTasks` inside the web container
+(`app/api/routers/documents.py`). The container also runs the API, so analysis
+competes with request handling, and it holds no lease the way worker translation
+jobs do. A hard crash of the web container mid-analysis leaves the document in
+`analyzing` until the next call that claims analysis.
+
+This is not a trap. `app/adapters/persistence/triage.py` admits
+`status IN ('uploaded', 'analyzing', 'extracted')` in its claim query, and its
+docstring records why: `analyzing` is eligible for recovery only because the
+caller already holds the cross-process lock, so a live owner cannot be reclaimed
+and a dead one can be. `app/mcp_server/server.py` records the same trade-off
+beside its triage timeout, choosing a pending response over cancellation for
+exactly this reason.
+
+The accepted limitation is therefore about *when* recovery happens, not whether
+it can: recovery is event-driven. No sweep reclaims stranded documents on their
+own; the next analyze call does. `check_status` plus a repeated `translate_file`
+is the supported path, and the MCP surface says so in its own pending-error
+message. Accepting it is a deliberate MVP cut — a background worker with a
+durable claim, or a startup sweep over stale `analyzing` rows, is the obvious
+later change. Moving analysis out of the web container also removes its
+competition with request latency.

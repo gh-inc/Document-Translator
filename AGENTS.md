@@ -7,7 +7,7 @@ reference sections by title, not number (numbers drift).
 
 ## Stack (pinned — do not improvise)
 
-Python 3.12 · FastAPI · SQLAlchemy 2.0 (async, aiosqlite) · Pydantic v2 ·
+Python 3.12 · FastAPI · aiosqlite (raw SQL, no ORM) · Pydantic v2 ·
 FastMCP · PyMuPDF · python-docx · `openai` + `openai-agents` · tiktoken ·
 structlog · uv. Exact versions live in `uv.lock`. Add dependencies ONLY via
 `uv add` / `uv add --group dev`; never hand-edit pins, never `pip install`.

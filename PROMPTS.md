@@ -935,3 +935,58 @@ coverage exposes neighboring-redaction source loss. Old DOCX extractions are
 stale, while PDF metadata is intact. No provider calls, live DB writes or
 production fixes were made. Fix/policy selection remains reserved to the owner
 by the source plan. See the execution record for acceptance and token accounting.
+
+
+## DT-101 — MCP shared-directory permissions (2026-10-04)
+
+A live download failure showed `PermissionError` reaching the MCP surface as a
+retryable error, which made clients retry an unwritable directory indefinitely.
+Mapped it to a terminal `shared_dir_unavailable` error, added a startup preflight
+so the operator sees the cause before any request, pinned the disk error boundary
+with `PermissionError` / `ENOSPC` / `EIO` / `ValueError`, added a read-only
+doctor script and corrected the ownership guidance. Verified end to end: the
+output path resolves, the host-visible file is mode 0644 and the shared directory
+is owned by the service UID. Owner had created the directory as their own user,
+which is what produced the original failure.
+
+
+## DT-103 — shared analysis cost in history (2026-10-04)
+
+Job-list and batch responses exposed no analysis cost, so the owner could not
+tell what triage had cost. Added `analysis_cost_usd` resolved from the same
+cumulative `document_analyses.cost_usd_total` as document responses, with one
+parameterized lookup for all distinct documents in a response. History shows the
+figure once per visible document, annotated with how many visible translations
+share it, and hides zero — historical analyses predate usage instrumentation, so
+zero does not mean the provider calls were free. `JobRecord` and the schema are
+unchanged; single-job GET and retry keep their zero default. Verified on the live
+API: two jobs of one document report the same figure.
+
+
+## DT-108 — untranslated PDF source erased by neighbouring redaction (2026-10-04)
+
+Root cause investigation DT-104–DT-107 confirmed that a block with no translation
+never registered its rectangle for protection, so a neighbour's overlapping
+redaction deleted its text silently. The first proposed fix — shrink the
+protected rectangle — was rejected on measurement: 49 of 69 adjacent pairs
+intersect, median 2.54 pt, maximum 16.34 pt, and in one pair the overlap exceeds
+the smaller block's full height, so no constant inset can work. Implemented the
+rejected alternative: a block's redaction is clipped against every page span it
+does not own, ownership meaning the rectangle contains at least 90% of the span.
+
+Two corrections during implementation are recorded in the plan. An initial
+ownership implementation could never return its own owner, so every span was
+treated as foreign and nothing was redacted at all — the new tests still passed
+because they asserted only that source text survived. Span clipping alone then
+broke the DT-77 guarantee for degraded blocks, whose rectangles can contain a
+neighbour's spans entirely; whole-rectangle protection is retained for that case.
+Both tests are now two-sided and both fail against the pre-fix renderer.
+
+
+## DT-109 — PDF renderer linearity and fallback observability (2026-10-04)
+
+Recorded in DECISIONS.md §5 that the PDF renderer assumes a linear text flow,
+with the measured 42-of-70 overflow figure and the fact that `fallback_blocks` and
+`fallback_pages` are computed and never read. Renumbered from DT-104 after
+collision with the investigation branch: ticket numbers were read from `main`
+while the orchestrator's `DT-104`…`DT-107` rows lived on an unmerged branch.

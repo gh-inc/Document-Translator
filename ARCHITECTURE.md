@@ -165,7 +165,7 @@ app/
   core/                  # domain. Imports NOTHING from FastAPI/MCP/OpenAI.
     models.py            # DocumentIR, Block, Job, Chunk, TranslationPlan, enums
     ports.py             # LLMProvider, DocumentExtractor, DocumentRenderer
-    services/            # TranslationService, JobService, CacheService, PricingService
+    services/            # document_service.py · job_service.py · triage_service.py · health_service.py · cache_keys.py
   adapters/
     llm/                 # openai_provider.py · fake_provider.py · triage_agent.py
     formats/             # pdf.py · docx.py · markdown.py · registry.py

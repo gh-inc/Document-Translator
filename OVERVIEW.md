@@ -26,12 +26,12 @@ the same PDF translated, and kill the containers mid-flight — it resumes.
 | Real OpenAI API behind an interface | Met | `core/ports.py::LLMProvider`; `OpenAIProvider` / `FakeProvider` |
 | Agents SDK with tool calling, agent earns its place | Met | **Triage only** — `read_blocks` / `search_blocks` navigation |
 | MCP server usable from Claude Code / Cursor | Met | FastMCP streamable-http `:8001/mcp`, 4 workflow tools |
-| ≥2 input formats | Met | PDF (PyMuPDF) + DOCX (python-docx) |
+| ≥2 input formats | Met | PDF (PyMuPDF) + DOCX (python-docx) + Markdown (structurally bypassed) |
 | Frontend | Met | React + Vite + TypeScript + Tailwind, Stark Future branding |
 | `docker compose up --build` from fresh clone | Met | Multi-stage image, 3 services, shared volume |
-| README: architecture, decisions, testing guide | Met | 11 sections + this overview |
-| PROMPTS.md: AI usage incl. rejected output | Met | 21 dated log entries |
-| DECISIONS.md: cuts, trade-offs, cost/p95, 3 more weeks | Met | 11 sections, live measurements |
+| README: architecture, decisions, testing guide | Met | 10 sections + this overview |
+| PROMPTS.md: AI usage incl. rejected output | Met | 32 dated log entries |
+| DECISIONS.md: cuts, trade-offs, cost/p95, 3 more weeks | Met | 16 sections, live measurements |
 
 ---
 
@@ -39,14 +39,14 @@ the same PDF translated, and kill the containers mid-flight — it resumes.
 
 | Metric | Value |
 |---|---|
-| Backend Python modules | 59 files, ~6 950 lines |
-| Backend tests | **493 collected** (offline, `FakeProvider` only) |
-| Frontend tests | **66 passed** (7 files) |
-| Frontend source | 25 TS/TSX/CSS files |
-| Commits | 51 |
-| Backlog tasks completed | 75 (`DT-1`…`DT-65`) |
-| `DECISIONS.md` decision records | 11 |
-| `PROMPTS.md` log entries | 21 |
+| Backend Python modules | 61 files, ~8 675 lines |
+| Backend tests | **714 passed**, 2 live deselected (offline, `FakeProvider` only) |
+| Frontend tests | **88 passed** (8 files) |
+| Frontend source | 26 TS/TSX/CSS files |
+| Commits | 93 |
+| Backlog tasks completed | 108 (`DT-1`…`DT-109`) |
+| `DECISIONS.md` decision records | 16 |
+| `PROMPTS.md` log entries | 32 |
 | Live provider tests | opt-in via `make test-live`; never run in CI |
 
 The entire automated suite costs **zero dollars** — the fake provider makes
