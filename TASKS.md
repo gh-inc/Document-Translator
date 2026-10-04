@@ -40,6 +40,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
+| DT-109 | 11 | Record PDF renderer linearity limits and fallback observability gap | done | 9722a69 |
 | DT-103 | 11 | Shared document analysis cost in history: backend/frontend audit, regression coverage and acceptance | done | 42fd33c, 26c64b4, 30735de, ea83c1e |
 | DT-101 | 11 | MCP shared-directory permissions: preflight, terminal errors, read-only doctor and acceptance | done | 3aefe66, 04d96ac, f379293, dd3bc2c, 41a68fe, d464c8d |
 | DT-1 | 0 | Establish git conventions and task backlog | done | 8590e81, this fix |
