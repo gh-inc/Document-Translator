@@ -57,3 +57,13 @@ Measured from local session `token_count` records, root request delta plus three
 child sessions. Input includes cached input and repeated context; these are token
 counts, not unique text or billing totals. A final checkpoint is recorded below;
 later commit/report turns fall outside that checkpoint.
+
+Checkpoint after implementation commit `ea83c1e`: **input 5,945,946;
+output 23,429** (cached input 5,665,221).
+
+| Agent | Input | Output |
+|---|---:|---:|
+| /root | 2,219,050 | 8,226 |
+| /root/frontend | 708,667 | 4,330 |
+| /root/review | 898,484 | 2,896 |
+| /root/backend | 2,119,745 | 7,977 |
