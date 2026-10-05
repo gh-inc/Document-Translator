@@ -15,12 +15,14 @@ byte-identical re-uploads reuse those extractions.
 
 ## Architecture and acceptance criteria
 
-```text
-Browser ───────► web (FastAPI) ─┐
-Claude / Cursor ► mcp (FastMCP) ─┼──► shared core services
-                    worker ─────┘    claims, translates, renders
-                                     │
-                 shared /data volume: SQLite WAL, uploads, outputs
+```mermaid
+flowchart LR
+    browser["Browser"] --> web["web (FastAPI)"]
+    editors["Claude / Cursor"] --> mcp["mcp (FastMCP)"]
+    web --> core["shared core services<br/>claims, translates, renders"]
+    mcp --> core
+    worker["worker"] --> core
+    core --> data[("shared /data volume<br/>SQLite WAL, uploads, outputs")]
 ```
 
 `web` and `mcp` are thin doors onto the same core services. The separate worker
@@ -205,6 +207,22 @@ in a temporary file and launch
 }
 ```
 
+For Codex:
+
+```bash
+codex mcp add stark-translate --url http://localhost:8001/mcp
+codex mcp list
+```
+
+Start a fresh `codex` session and use `/mcp` to inspect the connection. The
+command writes the server to `~/.codex/config.toml` (or a project-scoped
+`.codex/config.toml` for trusted projects) as:
+
+```toml
+[mcp_servers.stark-translate]
+url = "http://localhost:8001/mcp"
+```
+
 In Cursor, add the following to the project's `.cursor/mcp.json`, then enable
 the server in MCP settings:
 
@@ -217,7 +235,8 @@ the server in MCP settings:
 ```
 
 These configurations follow the official
-[Claude Code MCP guide](https://code.claude.com/docs/en/mcp) and
+[Claude Code MCP guide](https://code.claude.com/docs/en/mcp),
+[Codex MCP guide](https://developers.openai.com/codex/extend/mcp) and
 [Cursor MCP guide](https://cursor.com/docs/mcp).
 
 ## Three-step MCP verification
