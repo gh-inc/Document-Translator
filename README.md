@@ -17,6 +17,21 @@ byte-identical re-uploads reuse those extractions.
 
 ```mermaid
 flowchart LR
+    subgraph Clients
+     browser
+     editors
+    end
+    subgraph Services
+        web
+        mcp
+        core
+        worker
+    end
+    subgraph Storage
+        data
+    end
+
+
     browser["Browser"] --> web["web (FastAPI)"]
     editors["Claude / Cursor"] --> mcp["mcp (FastMCP)"]
     web --> core["shared core services<br/>claims, translates, renders"]
@@ -33,22 +48,22 @@ This is for product and operations teams that need reliable translations of
 business documents with predictable operations. It is not aimed at professional
 linguists who need computer-assisted translation (CAT) tools and workflows.
 
-| Acceptance criterion | Implementation and known limit |
-| --- | --- |
-| Resilience | SQLite WAL and chunk leases let a restarted worker resume from committed work after `kill -9`. A committed translation is not repeated; a provider timeout with an unknown outcome can still cause a duplicate invocation and unreported billing. |
-| Cost discipline | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. `cache_hits_total` and `cache_misses_total` sum durable job lookup counts; document triage spend is persisted separately from job spend; billing from ambiguous invocations with unknown usage remains excluded. |
-| Multi-language | One submission creates independently tracked jobs per target language, with separate progress and cost. A failure in one language does not stop the others. |
+| Acceptance criterion | Implementation and known limit                                                                                                                                                                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resilience           | SQLite WAL and chunk leases let a restarted worker resume from committed work after `kill -9`. A committed translation is not repeated; a provider timeout with an unknown outcome can still cause a duplicate invocation and unreported billing.                                                                                 |
+| Cost discipline      | The semantic block cache reuses translations for matching inputs, so a repeat bulk run can avoid provider calls. `cache_hits_total` and `cache_misses_total` sum durable job lookup counts; document triage spend is persisted separately from job spend; billing from ambiguous invocations with unknown usage remains excluded. |
+| Multi-language       | One submission creates independently tracked jobs per target language, with separate progress and cost. A failure in one language does not stop the others.                                                                                                                                                                       |
 
-| Hard requirement | Where it lives |
-| --- | --- |
-| Upload a PDF through the web app and download a translated PDF | `frontend/`, `app/api/`, document/job services, and the PDF extractor/renderer |
-| Real OpenAI API behind a provider interface | `app/adapters/llm/openai_provider.py`; tests use the fake provider |
-| OpenAI Agents SDK with tool calling | `app/adapters/llm/triage_agent.py` and its navigation tools |
-| MCP usable from Claude Code and Cursor | `app/mcp_server/` and the editor setup below |
-| At least two document formats | PDF, DOCX and Markdown adapters in `app/adapters/formats/` |
-| Resume translation after `kill -9` | Worker leases and persisted chunk checkpoints in `app/worker/` and persistence adapters; exercised by `scripts/chaos-restart.sh` |
-| Fresh-clone Docker Compose deployment | `Dockerfile`, `docker-compose.yml`, and the CI image build |
-| Required submission documents | `README.md`, `PROMPTS.md`, and `DECISIONS.md` |
+| Hard requirement                                               | Where it lives                                                                                                                   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Upload a PDF through the web app and download a translated PDF | `frontend/`, `app/api/`, document/job services, and the PDF extractor/renderer                                                   |
+| Real OpenAI API behind a provider interface                    | `app/adapters/llm/openai_provider.py`; tests use the fake provider                                                               |
+| OpenAI Agents SDK with tool calling                            | `app/adapters/llm/triage_agent.py` and its navigation tools                                                                      |
+| MCP usable from Claude Code and Cursor                         | `app/mcp_server/` and the editor setup below                                                                                     |
+| At least two document formats                                  | PDF, DOCX and Markdown adapters in `app/adapters/formats/`                                                                       |
+| Resume translation after `kill -9`                             | Worker leases and persisted chunk checkpoints in `app/worker/` and persistence adapters; exercised by `scripts/chaos-restart.sh` |
+| Fresh-clone Docker Compose deployment                          | `Dockerfile`, `docker-compose.yml`, and the CI image build                                                                       |
+| Required submission documents                                  | `README.md`, `PROMPTS.md`, and `DECISIONS.md`                                                                                    |
 
 ### Where an agent earns its keep
 
@@ -321,25 +336,25 @@ they call OpenAI and can incur charges. Locally, application settings read the
 process environment; they do not automatically load `.env`. Compose loads
 `.env`, and `measure_quality` can load a file when passed `--env-file`.
 
-| Command | What it covers | Prerequisites |
-| --- | --- | --- |
-| `make test` | Offline backend suite, using fake providers | Python dependencies from `uv sync`; no key, Docker, or running services |
-| `make test-live` | Opt-in tests against the real OpenAI provider | Exported OpenAI key, network access, and possible API charges; no Docker or running services |
-| `make lint` | Ruff checks and formatting | Python dependencies; no key, Docker, or running services |
-| `make typecheck` | Backend mypy checks | Python dependencies; no key, Docker, or running services |
-| `npm --prefix frontend test` | Frontend tests | Node.js and frontend dependencies installed with `npm --prefix frontend ci`; no key, Docker, or running services |
-| `npm --prefix frontend run typecheck` | Frontend TypeScript checks | Node.js and frontend dependencies installed; no key, Docker, or running services |
-| `npm --prefix frontend run build` | Production frontend bundle | Node.js and frontend dependencies installed; no key, Docker, or running services |
-| `uv run pre-commit run --all-files` | Ruff hooks and gitleaks secret scan | Python dependencies from `uv sync`; hooks may need network access on first run; no OpenAI key, Docker, or running services |
-| `make up` | Build and start the Compose stack | Docker Engine and Compose; services are started and remain running; fake provider is the default |
-| `docker compose up --build -d --wait` | Fresh build, startup, and container health checks | Docker Engine and Compose; starts services; no key with the default fake provider |
-| `./scripts/chaos-restart.sh` | Isolated fake-provider Compose run that kills and restarts a worker, then checks durable recovery | Docker Engine, Compose, and available local ports; builds/starts its own services; no key |
-| `docker compose config --quiet` | Compose configuration validation without printing resolved settings or starting containers | Docker Compose CLI; no Docker daemon, key, or running services |
-| `docker build .` | Build the production image | Docker Engine; may need network access to fetch base images/dependencies; no key or running services |
-| `uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env` | Live-only quality and cost measurement through the real pipeline; optionally add `--reference PATH`, `--models gpt-4o-mini,gpt-4o`, or `--target-language fr` | `LLM_PROVIDER=openai`, OpenAI key in the selected environment file, network access, and API charges; no Docker or running services |
-| `git status --short` | Check for remaining working-tree changes | Git repository; no key, Docker, or running services |
-| `git log --oneline -5` | Inspect recent delivery history | Git repository; no key, Docker, or running services |
-| `curl -fsS http://localhost:8000/healthz` and `curl -fsS http://localhost:8000/readyz` | Check Compose web liveness and readiness | Web service running on port 8000; no OpenAI key with the fake provider |
+| Command                                                                                | What it covers                                                                                                                                                | Prerequisites                                                                                                                      |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `make test`                                                                            | Offline backend suite, using fake providers                                                                                                                   | Python dependencies from `uv sync`; no key, Docker, or running services                                                            |
+| `make test-live`                                                                       | Opt-in tests against the real OpenAI provider                                                                                                                 | Exported OpenAI key, network access, and possible API charges; no Docker or running services                                       |
+| `make lint`                                                                            | Ruff checks and formatting                                                                                                                                    | Python dependencies; no key, Docker, or running services                                                                           |
+| `make typecheck`                                                                       | Backend mypy checks                                                                                                                                           | Python dependencies; no key, Docker, or running services                                                                           |
+| `npm --prefix frontend test`                                                           | Frontend tests                                                                                                                                                | Node.js and frontend dependencies installed with `npm --prefix frontend ci`; no key, Docker, or running services                   |
+| `npm --prefix frontend run typecheck`                                                  | Frontend TypeScript checks                                                                                                                                    | Node.js and frontend dependencies installed; no key, Docker, or running services                                                   |
+| `npm --prefix frontend run build`                                                      | Production frontend bundle                                                                                                                                    | Node.js and frontend dependencies installed; no key, Docker, or running services                                                   |
+| `uv run pre-commit run --all-files`                                                    | Ruff hooks and gitleaks secret scan                                                                                                                           | Python dependencies from `uv sync`; hooks may need network access on first run; no OpenAI key, Docker, or running services         |
+| `make up`                                                                              | Build and start the Compose stack                                                                                                                             | Docker Engine and Compose; services are started and remain running; fake provider is the default                                   |
+| `docker compose up --build -d --wait`                                                  | Fresh build, startup, and container health checks                                                                                                             | Docker Engine and Compose; starts services; no key with the default fake provider                                                  |
+| `./scripts/chaos-restart.sh`                                                           | Isolated fake-provider Compose run that kills and restarts a worker, then checks durable recovery                                                             | Docker Engine, Compose, and available local ports; builds/starts its own services; no key                                          |
+| `docker compose config --quiet`                                                        | Compose configuration validation without printing resolved settings or starting containers                                                                    | Docker Compose CLI; no Docker daemon, key, or running services                                                                     |
+| `docker build .`                                                                       | Build the production image                                                                                                                                    | Docker Engine; may need network access to fetch base images/dependencies; no key or running services                               |
+| `uv run python -m scripts.measure_quality samples/sample_en.pdf --env-file .env`       | Live-only quality and cost measurement through the real pipeline; optionally add `--reference PATH`, `--models gpt-4o-mini,gpt-4o`, or `--target-language fr` | `LLM_PROVIDER=openai`, OpenAI key in the selected environment file, network access, and API charges; no Docker or running services |
+| `git status --short`                                                                   | Check for remaining working-tree changes                                                                                                                      | Git repository; no key, Docker, or running services                                                                                |
+| `git log --oneline -5`                                                                 | Inspect recent delivery history                                                                                                                               | Git repository; no key, Docker, or running services                                                                                |
+| `curl -fsS http://localhost:8000/healthz` and `curl -fsS http://localhost:8000/readyz` | Check Compose web liveness and readiness                                                                                                                      | Web service running on port 8000; no OpenAI key with the fake provider                                                             |
 
 The `--env-file` option above is specific to `measure_quality`; other local
 commands need settings exported in their process environment. For example,
@@ -385,13 +400,13 @@ curl -fsS http://localhost:8000/metrics
 docker compose logs --tail=100 worker web mcp
 ```
 
-| Symptom | Check | Safe action |
-| --- | --- | --- |
-| Jobs remain queued | `docker compose ps worker`; compare `DATABASE_PATH`, `UPLOAD_STORAGE_PATH`, `OUTPUT_STORAGE_PATH` in your Compose configuration across processes | Start/recreate the worker with `docker compose up -d worker`; use the same `/data` volume. An idle `/readyz` 200 alone does not prove worker liveness. |
-| Jobs remain running | Inspect chunk leases using the SQL below and worker logs; normal job/chunk leases last 60 seconds and heartbeat runs every 10 seconds | Restart a dead worker and allow the outstanding job/chunk leases to expire; committed chunks resume from cache. Avoid editing states directly. |
-| Cost rises | `/metrics` exposes bulk `llm_cost_usd_total` and document `llm_triage_cost_usd_total`; query attempts and analyses below | Check retries and `MAX_COST_PER_JOB_USD`; reduce concurrency if rate limited, correct provider failures, and stop accepting new work while investigating. Recorded spend excludes unknown or uncheckpointed usage. Triage expense is shared once per document across all languages. |
-| Partial results | Job status `completed_with_errors` means missing translations rendered as source text; inspect `GET /api/jobs/{id}` errors | Resolve the reported cause; `curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8000/api/jobs/<job-id>/retry` requeues only missing work. Download again after completion. |
-| Triage remains analyzing | `GET /api/documents/{id}` and web/MCP logs; analysis tasks run in-process | After a crashed owner, `curl -fsS -X POST http://localhost:8000/api/documents/<document-id>/retry-triage`; successful analysis and analysis already used by jobs remain immutable. |
+| Symptom                  | Check                                                                                                                                            | Safe action                                                                                                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jobs remain queued       | `docker compose ps worker`; compare `DATABASE_PATH`, `UPLOAD_STORAGE_PATH`, `OUTPUT_STORAGE_PATH` in your Compose configuration across processes | Start/recreate the worker with `docker compose up -d worker`; use the same `/data` volume. An idle `/readyz` 200 alone does not prove worker liveness.                                                                                                                              |
+| Jobs remain running      | Inspect chunk leases using the SQL below and worker logs; normal job/chunk leases last 60 seconds and heartbeat runs every 10 seconds            | Restart a dead worker and allow the outstanding job/chunk leases to expire; committed chunks resume from cache. Avoid editing states directly.                                                                                                                                      |
+| Cost rises               | `/metrics` exposes bulk `llm_cost_usd_total` and document `llm_triage_cost_usd_total`; query attempts and analyses below                         | Check retries and `MAX_COST_PER_JOB_USD`; reduce concurrency if rate limited, correct provider failures, and stop accepting new work while investigating. Recorded spend excludes unknown or uncheckpointed usage. Triage expense is shared once per document across all languages. |
+| Partial results          | Job status `completed_with_errors` means missing translations rendered as source text; inspect `GET /api/jobs/{id}` errors                       | Resolve the reported cause; `curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8000/api/jobs/<job-id>/retry` requeues only missing work. Download again after completion.                                                                              |
+| Triage remains analyzing | `GET /api/documents/{id}` and web/MCP logs; analysis tasks run in-process                                                                        | After a crashed owner, `curl -fsS -X POST http://localhost:8000/api/documents/<document-id>/retry-triage`; successful analysis and analysis already used by jobs remain immutable.                                                                                                  |
 
 Read durable diagnostics without changing state:
 

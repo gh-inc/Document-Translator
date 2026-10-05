@@ -40,6 +40,7 @@ Statuses: `todo` → `in-progress` → `done` (or `cancelled`, with reason).
 
 | ID | Stage | Title | Status | Commits |
 |----|-------|-------|--------|---------|
+| DT-111 | docs | Add Claude Code and Codex MCP CLI examples and convert README architecture diagram to Mermaid | done | 9926e22 |
 | DT-109 | 11 | Record PDF renderer linearity limits and fallback observability gap | done | 9722a69 |
 | DT-108 | 11 | Protect untranslated PDF source blocks from overlapping translated-block redactions (confirmed by DT-105 probe) | done | b84a4dc |
 | DT-110 | 11 | Sync documentation to measured state and replace unused ORM with direct aiosqlite | done | b50f2c7 |
